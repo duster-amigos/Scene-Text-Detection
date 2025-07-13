@@ -217,7 +217,7 @@ class SeparableConv2d(nn.Module):
                                             stride=stride, groups=in_channels)
             self.pointwise_conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
             self.bn = nn.BatchNorm2d(out_channels)
-            self.relu = nn.ReLU()
+            self.relu = nn.ReLU(inplace=False)
             logger.model_info("SeparableConv2d initialized successfully")
         except Exception as e:
             logger.error(f"Error initializing SeparableConv2d: {e}")
