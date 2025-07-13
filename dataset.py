@@ -85,7 +85,7 @@ class ICDAR2015Dataset(Dataset):
             polygons = []
             if os.path.exists(gt_path):
                 try:
-                    with open(gt_path, 'r', encoding='utf-8') as f:
+                    with open(gt_path, 'r', encoding='utf-8-sig') as f:
                         for line_num, line in enumerate(f):
                             line = line.strip()
                             if line:
