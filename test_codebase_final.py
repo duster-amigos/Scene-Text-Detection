@@ -440,29 +440,46 @@ def create_model(device, pretrained=False):
     }
     
     try:
+        print_info("Creating model on CPU first...")
         # Initialize model on CPU first
         model = Model(model_config)
+        print_info("Model created on CPU successfully")
         
         # Initialize weights before moving to device
-        for m in model.modules():
-            if isinstance(m, (nn.Conv2d, nn.Linear)):
+        print_info("Initializing model weights...")
+        for name, m in model.named_modules():
+            if isinstance(m, (nn.Conv2d, nn.Linear, nn.ConvTranspose2d)):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
+        print_info("Weights initialized successfully")
+        
+        # Clear CUDA cache before moving to device
+        if device.type == 'cuda':
+            print_info("Clearing CUDA cache...")
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
         
         # Move model to device after initialization
+        print_info(f"Moving model to {device}...")
         model = model.to(device)
+        print_info("Model moved to device successfully")
         
         # Ensure CUDA synchronization if using GPU
         if device.type == 'cuda':
+            print_info("Synchronizing CUDA...")
             torch.cuda.synchronize()
         
         return model
     except Exception as e:
         print_error(f"Error creating model: {str(e)}")
+        # Print more detailed error information
+        import traceback
+        print_error("Full traceback:")
+        traceback.print_exc()
         raise e
 
 def test_training_step(device):

@@ -1,11 +1,18 @@
 # model.py
 import torch
-from addict import Dict
 from torch import nn
 import torch.nn.functional as F
 
 from build import build_backbone, build_neck, build_head
 from utils.logger import logger, log_exception
+
+class Dict(dict):
+    """Simple dict wrapper to replace addict dependency."""
+    def __getattr__(self, key):
+        return self[key]
+    
+    def __setattr__(self, key, value):
+        self[key] = value
 
 class Model(nn.Module):
     """
@@ -60,6 +67,11 @@ class Model(nn.Module):
                     nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                     if m.bias is not None:
                         nn.init.constant_(m.bias, 0)
+                elif isinstance(m, nn.ConvTranspose2d):
+                    logger.debug(f"Initializing ConvTranspose2d weights for {name}")
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                    if m.bias is not None:
+                        nn.init.constant_(m.bias, 0)
                 elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
                     logger.debug(f"Initializing normalization weights for {name}")
                     nn.init.constant_(m.weight, 1)
@@ -68,6 +80,29 @@ class Model(nn.Module):
         except Exception as e:
             log_exception(e, "Failed to initialize weights")
             raise RuntimeError(f"Weight initialization failed: {str(e)}")
+
+    def to(self, device):
+        """Override to method to add better error handling."""
+        try:
+            logger.debug(f"Moving model to device: {device}")
+            # Clear CUDA cache if moving to GPU
+            if device.type == 'cuda':
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+            
+            # Move model to device
+            model = super().to(device)
+            
+            # Synchronize if using GPU
+            if device.type == 'cuda':
+                torch.cuda.synchronize()
+            
+            logger.debug("Model moved to device successfully")
+            return model
+            
+        except Exception as e:
+            log_exception(e, f"Failed to move model to device {device}")
+            raise RuntimeError(f"Failed to move model to device: {str(e)}")
 
     def forward(self, x):
         """

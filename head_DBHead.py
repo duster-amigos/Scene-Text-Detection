@@ -8,22 +8,31 @@ class DBHead(nn.Module):
     """
     Differentiable Binarization (DB) head for text detection.
     """
-    def __init__(self, in_channels, k=50, adaptive=False, out_channels=2):
+    def __init__(self, in_channels, out_channels=2, k=50, adaptive=False):
         """
         Initialize DB Head.
         
         Args:
             in_channels (int): Number of input channels
+            out_channels (int): Number of output channels (2 for inference, 3 for training)
             k (int): Threshold for binarization
             adaptive (bool): Whether to use adaptive thresholding
-            out_channels (int): Number of output channels (2 for inference, 3 for training)
         """
         super().__init__()
-        logger.info(f"Initializing DBHead (in_channels={in_channels}, k={k}, adaptive={adaptive}, out_channels={out_channels})")
+        logger.info(f"Initializing DBHead (in_channels={in_channels}, out_channels={out_channels}, k={k}, adaptive={adaptive})")
         
         try:
             self.k = k
             self.adaptive = adaptive
+            self.out_channels = out_channels
+            
+            # Validate input parameters
+            if in_channels <= 0:
+                raise ValueError(f"in_channels must be positive, got {in_channels}")
+            if out_channels not in [2, 3]:
+                raise ValueError(f"out_channels must be 2 or 3, got {out_channels}")
+            if k <= 0:
+                raise ValueError(f"k must be positive, got {k}")
             
             # Build convolutional layers
             logger.debug("Building convolutional layers...")
@@ -51,11 +60,34 @@ class DBHead(nn.Module):
                     nn.Sigmoid()
                 )
             
+            # Initialize weights
+            self._initialize_weights()
             logger.info("DBHead initialized successfully")
             
         except Exception as e:
             log_exception(e, "Failed to initialize DBHead")
             raise RuntimeError(f"DBHead initialization failed: {str(e)}")
+
+    def _initialize_weights(self):
+        """Initialize weights for all layers."""
+        try:
+            logger.debug("Initializing DBHead weights...")
+            for m in self.modules():
+                if isinstance(m, nn.Conv2d):
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                    if m.bias is not None:
+                        nn.init.constant_(m.bias, 0)
+                elif isinstance(m, nn.ConvTranspose2d):
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                    if m.bias is not None:
+                        nn.init.constant_(m.bias, 0)
+                elif isinstance(m, nn.BatchNorm2d):
+                    nn.init.constant_(m.weight, 1)
+                    nn.init.constant_(m.bias, 0)
+            logger.debug("DBHead weights initialized successfully")
+        except Exception as e:
+            log_exception(e, "Failed to initialize DBHead weights")
+            raise RuntimeError(f"Weight initialization failed: {str(e)}")
 
     def step_function(self, x, y):
         """
@@ -80,6 +112,10 @@ class DBHead(nn.Module):
         """
         try:
             logger.debug(f"DBHead forward pass - Input shape: {x.shape}")
+            
+            # Validate input
+            if x.dim() != 4:
+                raise ValueError(f"Expected 4D input tensor, got {x.dim()}D")
             
             # Get probability map
             binary = self.binarize(x)
@@ -124,7 +160,7 @@ if __name__ == '__main__':
             logger.info(f"\nTesting with adaptive={adaptive}")
             
             # Initialize head
-            head = DBHead(in_channels=in_channels, adaptive=adaptive)
+            head = DBHead(in_channels=in_channels, out_channels=2, adaptive=adaptive)
             logger.info("DBHead created successfully")
             
             # Test training mode
