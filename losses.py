@@ -221,9 +221,9 @@ class DBLoss(nn.Module):
                 - 'loss': total loss
         """
         try:
-            shrink_maps = pred[:, 0, :, :]
-            threshold_maps = pred[:, 1, :, :]
-            binary_maps = pred[:, 2, :, :]
+            shrink_maps = pred[:, 0:1, :, :]  # Keep channel dimension
+            threshold_maps = pred[:, 1:2, :, :]  # Keep channel dimension
+            binary_maps = pred[:, 2:3, :, :]  # Keep channel dimension
 
             loss_shrink_maps = self.bce_loss(shrink_maps, batch['shrink_map'], batch['shrink_mask'])
             loss_threshold_maps = self.l1_loss(threshold_maps, batch['threshold_map'], batch['threshold_mask'])
