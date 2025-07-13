@@ -98,13 +98,22 @@ class Trainer:
                 is_training=True
             )
             
-            # Validation dataset
-            self.val_dataset = ICDAR2015Dataset(
-                data_dir=self.config['data']['val_images'],
-                gt_dir=self.config['data']['val_labels'],
-                transform=val_transform,
-                is_training=False
-            )
+            # Validation dataset (only if validation paths are provided)
+            if (self.config['data']['val_images'] and 
+                self.config['data']['val_labels'] and 
+                os.path.exists(self.config['data']['val_images']) and 
+                os.path.exists(self.config['data']['val_labels'])):
+                
+                self.val_dataset = ICDAR2015Dataset(
+                    data_dir=self.config['data']['val_images'],
+                    gt_dir=self.config['data']['val_labels'],
+                    transform=val_transform,
+                    is_training=False
+                )
+                print(f"Validation dataset loaded: {len(self.val_dataset)} samples")
+            else:
+                print("No validation data provided or validation directories don't exist. Training without validation.")
+                self.val_dataset = None
             
             # Data loaders
             self.train_loader = DataLoader(
@@ -115,16 +124,20 @@ class Trainer:
                 pin_memory=True
             )
             
-            self.val_loader = DataLoader(
-                self.val_dataset,
-                batch_size=self.config['training']['batch_size'],
-                shuffle=False,
-                num_workers=self.config['training']['num_workers'],
-                pin_memory=True
-            )
+            if self.val_dataset is not None:
+                self.val_loader = DataLoader(
+                    self.val_dataset,
+                    batch_size=self.config['training']['batch_size'],
+                    shuffle=False,
+                    num_workers=self.config['training']['num_workers'],
+                    pin_memory=True
+                )
+                print(f"Validation samples: {len(self.val_dataset)}")
+            else:
+                self.val_loader = None
+                print("No validation loader created")
             
             print(f"Training samples: {len(self.train_dataset)}")
-            print(f"Validation samples: {len(self.val_dataset)}")
             
         except Exception as e:
             print(f"Error creating data loaders: {e}")
@@ -242,6 +255,10 @@ class Trainer:
     
     def validate_epoch(self, epoch):
         """Validate for one epoch"""
+        if self.val_loader is None:
+            print("No validation data available, skipping validation")
+            return float('inf')
+            
         self.model.eval()
         total_loss = 0.0
         total_shrink_loss = 0.0
@@ -316,18 +333,27 @@ class Trainer:
                 # Training
                 train_loss = self.train_epoch(epoch + 1)
                 
-                # Validation
-                val_loss = self.validate_epoch(epoch + 1)
+                # Validation (if validation data is available)
+                if self.val_loader is not None:
+                    val_loss = self.validate_epoch(epoch + 1)
+                    
+                    # Save checkpoint based on validation loss
+                    is_best = val_loss < self.best_loss
+                    if is_best:
+                        self.best_loss = val_loss
+                        print(f"New best validation loss: {self.best_loss:.4f}")
+                else:
+                    # No validation data, save checkpoint based on training loss
+                    val_loss = float('inf')
+                    is_best = train_loss < self.best_loss
+                    if is_best:
+                        self.best_loss = train_loss
+                        print(f"New best training loss: {self.best_loss:.4f}")
                 
                 # Update scheduler
                 self.scheduler.step()
                 
                 # Save checkpoint
-                is_best = val_loss < self.best_loss
-                if is_best:
-                    self.best_loss = val_loss
-                    print(f"New best validation loss: {self.best_loss:.4f}")
-                
                 self._save_checkpoint(epoch + 1, is_best)
                 
                 # Print learning rate

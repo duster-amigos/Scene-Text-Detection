@@ -38,8 +38,8 @@
     "data": {
         "train_images": "data/icdar2015/train/images",
         "train_labels": "data/icdar2015/train/labels",
-        "val_images": "data/icdar2015/val/images",
-        "val_labels": "data/icdar2015/val/labels",
+        "val_images": "",
+        "val_labels": "",
         "test_images": "data/icdar2015/test/images",
         "test_labels": "data/icdar2015/test/labels"
     },
