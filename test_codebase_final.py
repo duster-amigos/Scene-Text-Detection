@@ -5,39 +5,46 @@ This script tests all components of the DBNet project thoroughly.
 Run this in Google Colab with GPU to verify everything works correctly.
 """
 
+# Standard library imports
 import os
-import sys
-import time
+import shutil
 import traceback
+
+# Third-party imports
+import cv2
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-import cv2
-from PIL import Image
+from torch.optim import SGD
+
+# Local imports
+from model import Model
+from losses import DBLoss, BalanceCrossEntropyLoss, DiceLoss, MaskL1Loss
+from datasets.icdar2015 import ICDAR2015Dataset
+from utils.metrics import compute_batch_metrics, evaluate_detections
+from utils.postprocess import process_predictions
 
 # Add current directory to path
+import sys
 sys.path.append('.')
 
-def print_header(title):
-    """Print a formatted header."""
-    print("\n" + "="*80)
-    print(f"🧪 {title}")
-    print("="*80)
+# Helper functions for printing
+def print_header(text):
+    print("\n" + "=" * 80)
+    print(f"🧪 {text}")
+    print("=" * 80)
 
-def print_success(message):
-    """Print success message."""
-    print(f"✅ {message}")
+def print_info(text):
+    print(f"ℹ️  {text}")
 
-def print_error(message, error=None):
-    """Print error message."""
-    print(f"❌ {message}")
+def print_success(text):
+    print(f"✅ {text}")
+
+def print_error(text, error=None):
+    print(f"❌ {text}")
     if error:
         print(f"   Error: {error}")
-
-def print_info(message):
-    """Print info message."""
-    print(f"ℹ️  {message}")
 
 def test_imports():
     """Test all imports."""
@@ -256,37 +263,40 @@ def test_losses():
     print_header("Testing Loss Functions")
     
     try:
-        from losses import DBLoss, BalanceCrossEntropyLoss, DiceLoss, MaskL1Loss
+        from losses import BalanceCrossEntropyLoss, DiceLoss, MaskL1Loss, DBLoss
         
-        # Test DBLoss with correct shapes
-        criterion = DBLoss(alpha=1.0, beta=10, ohem_ratio=3)
+        # Create dummy data with correct shapes
+        pred = torch.randn(2, 1, 160, 160)  # Keep channel dimension
+        gt = torch.randint(0, 2, (2, 1, 160, 160)).float()  # Keep channel dimension
+        mask = torch.ones(2, 160, 160)  # No channel dimension
         
-        # Create dummy predictions and targets with correct shapes
-        pred = torch.randn(2, 3, 160, 160)  # Training mode: 3 channels
+        # Test BalanceCrossEntropyLoss
+        bce_loss = BalanceCrossEntropyLoss()
+        bce_out = bce_loss(pred, gt, mask)
+        assert isinstance(bce_out, torch.Tensor)
         
-        batch = {
-            'shrink_map': torch.randn(2, 1, 160, 160),
-            'shrink_mask': torch.ones(2, 160, 160),
-            'threshold_map': torch.randn(2, 1, 160, 160),
-            'threshold_mask': torch.ones(2, 160, 160)
-        }
-        
-        losses = criterion(pred, batch)
-        print_info(f"Loss components: {list(losses.keys())}")
-        print_info(f"Total loss: {losses['loss']:.4f}")
-        
-        # Test individual loss functions with correct shapes
-        bce_loss = BalanceCrossEntropyLoss(negative_ratio=3)
+        # Test DiceLoss
         dice_loss = DiceLoss()
+        dice_out = dice_loss(pred, gt, mask)
+        assert isinstance(dice_out, torch.Tensor)
+        
+        # Test MaskL1Loss
         l1_loss = MaskL1Loss()
+        l1_out = l1_loss(pred, gt, mask)
+        assert isinstance(l1_out, torch.Tensor)
         
-        # Test BCE loss with matching shapes
-        pred_bce = torch.randn(2, 160, 160)
-        gt_bce = torch.randn(2, 160, 160)
-        mask_bce = torch.ones(2, 160, 160)
-        bce_result = bce_loss(pred_bce, gt_bce, mask_bce)
-        print_info(f"BCE loss: {bce_result:.4f}")
+        # Test DBLoss
+        criterion = DBLoss()
+        batch = {
+            'shrink_map': torch.randn(2, 1, 160, 160),  # Keep channel dimension
+            'shrink_mask': torch.ones(2, 160, 160),  # No channel dimension
+            'threshold_map': torch.randn(2, 1, 160, 160),  # Keep channel dimension
+            'threshold_mask': torch.ones(2, 160, 160)  # No channel dimension
+        }
+        pred = torch.randn(2, 3, 160, 160)  # 3 channels for training mode
+        losses = criterion(pred, batch)
         
+        print_info(f"Loss components: {list(losses.keys())}")
         print_success("Loss functions test passed")
         return True
         
@@ -301,35 +311,39 @@ def test_dataset():
     
     try:
         from datasets.icdar2015 import ICDAR2015Dataset
+        import os
         
-        # Create dummy dataset structure
-        os.makedirs('test_data/train/images', exist_ok=True)
-        os.makedirs('test_data/train/labels', exist_ok=True)
-        os.makedirs('test_data/test/images', exist_ok=True)
-        os.makedirs('test_data/test/labels', exist_ok=True)
+        # Create temporary test data
+        os.makedirs('temp_test/train/images', exist_ok=True)
+        os.makedirs('temp_test/train/labels', exist_ok=True)
         
-        # Create dummy image
-        dummy_img = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
-        cv2.imwrite('test_data/train/images/test.jpg', dummy_img)
+        # Create a dummy image and label
+        img = np.zeros((640, 640, 3), dtype=np.uint8)
+        cv2.imwrite('temp_test/train/images/test.jpg', img)
         
-        # Create dummy label
-        with open('test_data/train/labels/test.txt', 'w') as f:
-            f.write("100,100,200,100,200,200,100,200,text\n")
+        with open('temp_test/train/labels/test.txt', 'w') as f:
+            # Write a simple polygon: x1,y1,x2,y2,x3,y3,x4,y4,text
+            f.write('100,100,200,100,200,200,100,200,text\n')
         
-        # Test dataset
-        dataset = ICDAR2015Dataset('test_data', is_training=True)
+        # Create dataset
+        dataset = ICDAR2015Dataset('temp_test', is_training=True)
         print_info(f"Dataset length: {len(dataset)}")
         
-        # Test data loading
+        # Test loading an item
         img, target = dataset[0]
-        print_info(f"Image shape: {img.shape}")
-        print_info(f"Target keys: {list(target.keys())}")
         
-        # Test DataLoader
-        dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
-        batch_img, batch_target = next(iter(dataloader))
-        print_info(f"Batch image shape: {batch_img.shape}")
-        print_info(f"Batch target keys: {list(batch_target.keys())}")
+        # Verify shapes and types
+        assert isinstance(img, torch.Tensor), "Image should be a tensor"
+        assert img.shape == (3, 640, 640), f"Wrong image shape: {img.shape}"
+        assert isinstance(target, dict), "Target should be a dictionary"
+        assert isinstance(target['shrink_map'], torch.Tensor), "Shrink map should be a tensor"
+        assert target['shrink_map'].shape == (1, 640, 640), f"Wrong shrink map shape: {target['shrink_map'].shape}"
+        assert isinstance(target['shrink_mask'], torch.Tensor), "Shrink mask should be a tensor"
+        assert target['shrink_mask'].shape == (640, 640), f"Wrong shrink mask shape: {target['shrink_mask'].shape}"
+        
+        # Clean up
+        import shutil
+        shutil.rmtree('temp_test')
         
         print_success("Dataset test passed")
         return True
@@ -337,6 +351,9 @@ def test_dataset():
     except Exception as e:
         print_error("Dataset test failed", str(e))
         traceback.print_exc()
+        # Clean up on failure
+        if os.path.exists('temp_test'):
+            shutil.rmtree('temp_test')
         return False
 
 def test_postprocessing():
@@ -364,22 +381,40 @@ def test_postprocessing():
         return False
 
 def test_metrics():
-    """Test evaluation metrics."""
+    """Test metrics computation."""
     print_header("Testing Metrics")
     
     try:
-        from utils.metrics import compute_batch_metrics, evaluate_detections
+        from utils.metrics import compute_batch_metrics
+        import numpy as np
         
         # Create dummy ground truth and predictions
-        gt_boxes = [np.array([[100, 100], [200, 100], [200, 200], [100, 200]])]
-        pred_boxes = [np.array([[105, 105], [195, 105], [195, 195], [105, 195]])]
-        pred_scores = [0.9]
+        gt_boxes = [
+            np.array([[100, 100], [200, 100], [200, 200], [100, 200]]).reshape(1, 4, 2),  # One box
+            np.array([[300, 300], [400, 300], [400, 400], [300, 400]]).reshape(1, 4, 2)   # One box
+        ]
         
-        # Test metrics
+        pred_boxes = [
+            np.array([[110, 110], [190, 110], [190, 190], [110, 190]]).reshape(1, 4, 2),  # Close to first gt box
+            np.array([[310, 310], [390, 310], [390, 390], [310, 390]]).reshape(1, 4, 2)   # Close to second gt box
+        ]
+        
+        pred_scores = [
+            np.array([0.9]),  # High confidence for first box
+            np.array([0.8])   # High confidence for second box
+        ]
+        
+        # Compute metrics
         precision, recall, f1 = compute_batch_metrics(gt_boxes, pred_boxes, pred_scores)
-        print_info(f"Precision: {precision:.3f}")
-        print_info(f"Recall: {recall:.3f}")
-        print_info(f"F1 Score: {f1:.3f}")
+        
+        # Verify metrics are in valid range [0, 1]
+        assert 0 <= precision <= 1, f"Invalid precision: {precision}"
+        assert 0 <= recall <= 1, f"Invalid recall: {recall}"
+        assert 0 <= f1 <= 1, f"Invalid F1: {f1}"
+        
+        print_info(f"Precision: {precision:.4f}")
+        print_info(f"Recall: {recall:.4f}")
+        print_info(f"F1 Score: {f1:.4f}")
         
         print_success("Metrics test passed")
         return True
@@ -423,28 +458,36 @@ def test_training_step(device):
         optimizer = SGD(model.parameters(), lr=0.007, momentum=0.9, weight_decay=1e-4)
         
         # Create dummy data with correct shapes
-        images = torch.randn(2, 3, 640, 640).to(device)
+        batch_size = 2
+        H, W = 640, 640
+        images = torch.randn(batch_size, 3, H, W).to(device)
         targets = {
-            'shrink_map': torch.randn(2, 1, 640, 640).to(device),  # Keep channel dimension
-            'shrink_mask': torch.ones(2, 640, 640).to(device),  # No channel dimension
-            'threshold_map': torch.randn(2, 1, 640, 640).to(device),  # Keep channel dimension
-            'threshold_mask': torch.ones(2, 640, 640).to(device),  # No channel dimension
-            'boxes': torch.randn(2, 4, 2).to(device)  # Dummy boxes
+            'shrink_map': torch.randn(batch_size, 1, H, W).to(device),  # Keep channel dimension
+            'shrink_mask': torch.ones(batch_size, H, W).to(device),  # No channel dimension
+            'threshold_map': torch.randn(batch_size, 1, H, W).to(device),  # Keep channel dimension
+            'threshold_mask': torch.ones(batch_size, H, W).to(device),  # No channel dimension
+            'boxes': torch.randn(batch_size, 4, 2).to(device)  # Dummy boxes
         }
         
         # Training step
         model.train()
         optimizer.zero_grad()
         
-        predictions = model(images)  # Shape: (2, 3, 640, 640) during training
+        # Forward pass - model outputs (B, 3, H, W) in training mode
+        predictions = model(images)
+        assert predictions.shape == (batch_size, 3, H, W), f"Wrong prediction shape: {predictions.shape}"
+        
+        # Compute loss
         losses = criterion(predictions, targets)
         loss = losses['loss']
         
+        # Backward pass
         loss.backward()
         optimizer.step()
         
         print_info(f"Training loss: {loss.item():.4f}")
         print_info(f"Loss components: {list(losses.keys())}")
+        print_info(f"Prediction shape: {predictions.shape}")
         
         print_success("Training step test passed")
         return True
