@@ -425,17 +425,18 @@ def test_training_step(device):
         # Create dummy data with correct shapes
         images = torch.randn(2, 3, 640, 640).to(device)
         targets = {
-            'shrink_map': torch.randn(2, 1, 640, 640).to(device),
-            'shrink_mask': torch.ones(2, 640, 640).to(device),
-            'threshold_map': torch.randn(2, 1, 640, 640).to(device),
-            'threshold_mask': torch.ones(2, 640, 640).to(device)
+            'shrink_map': torch.randn(2, 1, 640, 640).to(device),  # Keep channel dimension
+            'shrink_mask': torch.ones(2, 640, 640).to(device),  # No channel dimension
+            'threshold_map': torch.randn(2, 1, 640, 640).to(device),  # Keep channel dimension
+            'threshold_mask': torch.ones(2, 640, 640).to(device),  # No channel dimension
+            'boxes': torch.randn(2, 4, 2).to(device)  # Dummy boxes
         }
         
         # Training step
         model.train()
         optimizer.zero_grad()
         
-        predictions = model(images)
+        predictions = model(images)  # Shape: (2, 3, 640, 640) during training
         losses = criterion(predictions, targets)
         loss = losses['loss']
         

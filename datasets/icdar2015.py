@@ -84,21 +84,20 @@ class ICDAR2015Dataset(Dataset):
             print(f"Error reading {label_path}: {e}")
             polygons = []
 
-        # Generate target maps
+        # Generate target maps (returns numpy arrays)
         target = self.generate_target(img.shape[:2], polygons)
         
-        # Apply augmentations
+        # Apply augmentations to image
         if self.transform:
-            # Apply image augmentation only
             augmented = self.transform(image=img)
-            img = augmented['image']
-            
-            # Keep targets as numpy arrays for now
-            # They will be converted to tensors later if needed
-            target['shrink_map'] = torch.from_numpy(target['shrink_map']).unsqueeze(0)
-            target['threshold_map'] = torch.from_numpy(target['threshold_map']).unsqueeze(0)
-            target['shrink_mask'] = torch.from_numpy(target['shrink_mask'])
-            target['threshold_mask'] = torch.from_numpy(target['threshold_mask'])
+            img = augmented['image']  # This is already a tensor due to ToTensorV2
+        
+        # Convert target maps to tensors with correct shapes
+        target['shrink_map'] = torch.from_numpy(target['shrink_map']).float().unsqueeze(0)  # Add channel dim
+        target['threshold_map'] = torch.from_numpy(target['threshold_map']).float().unsqueeze(0)  # Add channel dim
+        target['shrink_mask'] = torch.from_numpy(target['shrink_mask']).float()  # Keep as (H, W)
+        target['threshold_mask'] = torch.from_numpy(target['threshold_mask']).float()  # Keep as (H, W)
+        target['boxes'] = torch.from_numpy(target['boxes']).float()  # Convert boxes to tensor
 
         return img, target
 

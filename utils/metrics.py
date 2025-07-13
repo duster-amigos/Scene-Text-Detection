@@ -26,9 +26,9 @@ def evaluate_detections(gt_boxes, pred_boxes, pred_scores, iou_threshold=0.5):
     """
     Evaluate detection results.
     Args:
-        gt_boxes: List of ground truth boxes (N x 4 x 2)
-        pred_boxes: List of predicted boxes (M x 4 x 2)
-        pred_scores: List of prediction scores (M,)
+        gt_boxes: List or numpy array of ground truth boxes (N x 4 x 2)
+        pred_boxes: List or numpy array of predicted boxes (M x 4 x 2)
+        pred_scores: List or numpy array of prediction scores (M,)
         iou_threshold: IoU threshold for considering a match
     Returns:
         precision: Precision score
@@ -37,17 +37,13 @@ def evaluate_detections(gt_boxes, pred_boxes, pred_scores, iou_threshold=0.5):
         pred_matched: List of matched prediction indices
         gt_matched: List of matched ground truth indices
     """
-    # Check if boxes are empty
-    if isinstance(gt_boxes, np.ndarray):
-        if gt_boxes.size == 0:
-            return 0, 0, 0, [], []
-    elif len(gt_boxes) == 0:
-        return 0, 0, 0, [], []
-        
-    if isinstance(pred_boxes, np.ndarray):
-        if pred_boxes.size == 0:
-            return 0, 0, 0, [], []
-    elif len(pred_boxes) == 0:
+    # Convert inputs to numpy arrays if they're not already
+    gt_boxes = np.asarray(gt_boxes)
+    pred_boxes = np.asarray(pred_boxes)
+    pred_scores = np.asarray(pred_scores)
+
+    # Check if boxes are empty using size attribute
+    if gt_boxes.size == 0 or pred_boxes.size == 0:
         return 0, 0, 0, [], []
 
     # Convert boxes to polygons

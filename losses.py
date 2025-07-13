@@ -161,16 +161,6 @@ class DBLoss(nn.Module):
     Differentiable Binarization (DB) loss combining balanced cross-entropy, Dice, and masked L1 losses.
     """
     def __init__(self, alpha=1.0, beta=10, ohem_ratio=3, reduction='mean', eps=1e-6):
-        """
-        Initialize the DB loss module.
-
-        Args:
-            alpha (float): Weight for the shrink map loss.
-            beta (float): Weight for the threshold map loss.
-            ohem_ratio (float): Ratio for Online Hard Example Mining in balanced cross-entropy.
-            reduction (str): Reduction method, 'mean' or 'sum' (currently not used in computation).
-            eps (float): Small value to prevent division by zero.
-        """
         super().__init__()
         assert reduction in ['mean', 'sum'], " reduction must in ['mean','sum']"
         self.alpha = alpha
@@ -194,28 +184,30 @@ class DBLoss(nn.Module):
                 - 'threshold_mask': shape (N, H, W)
 
         Returns:
-            dict: Computed losses:
-                - 'loss_shrink_maps': loss for shrink maps
-                - 'loss_threshold_maps': loss for threshold maps
-                - 'loss_binary_maps': loss for binary maps (only during training)
-                - 'loss': total loss
+            dict: Computed losses
         """
-        shrink_maps = pred[:, 0, :, :].unsqueeze(1)  # Add channel dimension
-        threshold_maps = pred[:, 1, :, :].unsqueeze(1)  # Add channel dimension
-        binary_maps = pred[:, 2, :, :].unsqueeze(1)  # Add channel dimension
+        # Ensure all maps have the correct shape (N, 1, H, W)
+        shrink_maps = pred[:, 0:1, :, :]  # Keep channel dimension
+        threshold_maps = pred[:, 1:2, :, :]  # Keep channel dimension
+        
+        # Ensure ground truth maps have correct shape
+        if 'shrink_map' in batch and batch['shrink_map'].dim() == 3:
+            batch['shrink_map'] = batch['shrink_map'].unsqueeze(1)
+        if 'threshold_map' in batch and batch['threshold_map'].dim() == 3:
+            batch['threshold_map'] = batch['threshold_map'].unsqueeze(1)
 
+        # Compute losses
         loss_shrink_maps = self.bce_loss(shrink_maps, batch['shrink_map'], batch['shrink_mask'])
         loss_threshold_maps = self.l1_loss(threshold_maps, batch['threshold_map'], batch['threshold_mask'])
         metrics = dict(loss_shrink_maps=loss_shrink_maps, loss_threshold_maps=loss_threshold_maps)
         
         if pred.size()[1] > 2:
+            binary_maps = pred[:, 2:3, :, :]  # Keep channel dimension
             loss_binary_maps = self.dice_loss(binary_maps, batch['shrink_map'], batch['shrink_mask'])
             metrics['loss_binary_maps'] = loss_binary_maps
-            # Total loss: L = α * L_s + β * L_t + L_b (as per paper)
             loss_all = self.alpha * loss_shrink_maps + self.beta * loss_threshold_maps + loss_binary_maps
             metrics['loss'] = loss_all
         else:
-            # During inference, only use shrink map loss
             metrics['loss'] = loss_shrink_maps
             
         return metrics
