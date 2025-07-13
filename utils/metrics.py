@@ -37,7 +37,7 @@ def evaluate_detections(gt_boxes, pred_boxes, pred_scores, iou_threshold=0.5):
         pred_matched: List of matched prediction indices
         gt_matched: List of matched ground truth indices
     """
-    if not gt_boxes or not pred_boxes:
+    if len(gt_boxes) == 0 or len(pred_boxes) == 0:
         return 0, 0, 0, [], []
 
     # Convert boxes to polygons

@@ -95,10 +95,27 @@ class ICDAR2015Dataset(Dataset):
                                            target['shrink_mask'],
                                            target['threshold_mask']])
             img = augmented['image']
-            target['shrink_map'] = torch.from_numpy(augmented['masks'][0]).unsqueeze(0)
-            target['threshold_map'] = torch.from_numpy(augmented['masks'][1]).unsqueeze(0)
-            target['shrink_mask'] = torch.from_numpy(augmented['masks'][2])
-            target['threshold_mask'] = torch.from_numpy(augmented['masks'][3])
+            
+            # Handle tensor conversion properly
+            if isinstance(augmented['masks'][0], torch.Tensor):
+                target['shrink_map'] = augmented['masks'][0].unsqueeze(0)
+            else:
+                target['shrink_map'] = torch.from_numpy(augmented['masks'][0]).unsqueeze(0)
+                
+            if isinstance(augmented['masks'][1], torch.Tensor):
+                target['threshold_map'] = augmented['masks'][1].unsqueeze(0)
+            else:
+                target['threshold_map'] = torch.from_numpy(augmented['masks'][1]).unsqueeze(0)
+                
+            if isinstance(augmented['masks'][2], torch.Tensor):
+                target['shrink_mask'] = augmented['masks'][2]
+            else:
+                target['shrink_mask'] = torch.from_numpy(augmented['masks'][2])
+                
+            if isinstance(augmented['masks'][3], torch.Tensor):
+                target['threshold_mask'] = augmented['masks'][3]
+            else:
+                target['threshold_mask'] = torch.from_numpy(augmented['masks'][3])
 
         return img, target
 
@@ -158,6 +175,9 @@ class ICDAR2015Dataset(Dataset):
                 thresh_mask = np.zeros_like(threshold_map)
                 cv2.fillPoly(thresh_mask, [thresh_outer.astype(np.int32)], 1)
                 cv2.fillPoly(thresh_mask, [thresh_inner.astype(np.int32)], 0)
+                
+                # Ensure thresh_mask is uint8 for distanceTransform
+                thresh_mask = thresh_mask.astype(np.uint8)
                 threshold_map = cv2.distanceTransform(thresh_mask, cv2.DIST_L2, 0)
                 threshold_map = threshold_map / (np.max(threshold_map) + 1e-6)
                 threshold_map = np.clip(threshold_map, thresh_min, thresh_max)
