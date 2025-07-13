@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 import json
 import random
@@ -126,12 +127,49 @@ class ICDAR2015Dataset(Dataset):
                 image = self.transform(image)
                 logger.data_info(f"Image after transforms: shape={image.shape}")
             
-            # Generate ground truth maps
+            # Generate ground truth maps at original size first
             logger.data_info("Generating ground truth maps")
             shrink_map, shrink_mask, threshold_map, threshold_mask = self.generate_gt_maps(
                 h, w, polygons
             )
             logger.data_info(f"GT maps generated: shrink_map={shrink_map.shape}, threshold_map={threshold_map.shape}")
+            
+            # Resize ground truth maps to match transformed image size
+            if self.transform:
+                target_size = (640, 640)  # Match the transform resize
+                logger.data_info(f"Resizing GT maps to {target_size}")
+                
+                # Resize shrink map
+                shrink_map = F.interpolate(
+                    shrink_map.unsqueeze(0), 
+                    size=target_size, 
+                    mode='bilinear', 
+                    align_corners=False
+                ).squeeze(0)
+                
+                # Resize shrink mask
+                shrink_mask = F.interpolate(
+                    shrink_mask.unsqueeze(0).unsqueeze(0), 
+                    size=target_size, 
+                    mode='nearest'
+                ).squeeze(0).squeeze(0)
+                
+                # Resize threshold map
+                threshold_map = F.interpolate(
+                    threshold_map.unsqueeze(0), 
+                    size=target_size, 
+                    mode='bilinear', 
+                    align_corners=False
+                ).squeeze(0)
+                
+                # Resize threshold mask
+                threshold_mask = F.interpolate(
+                    threshold_mask.unsqueeze(0).unsqueeze(0), 
+                    size=target_size, 
+                    mode='nearest'
+                ).squeeze(0).squeeze(0)
+                
+                logger.data_info(f"GT maps resized: shrink_map={shrink_map.shape}, threshold_map={threshold_map.shape}")
             
             result = {
                 'image': image,
