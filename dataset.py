@@ -104,6 +104,7 @@ class ICDAR2015Dataset(Dataset):
                         print(f"    → This file has {len(all_lines)} annotations")
                         for line_num, line in enumerate(f):
                             line = line.strip()
+                            print(f"Line: {line}")
                             if line:
                                 # ICDAR 2015 format: x1,y1,x2,y2,x3,y3,x4,y4,text
                                 parts = line.split(',')
