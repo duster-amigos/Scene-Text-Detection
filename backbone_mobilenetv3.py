@@ -7,25 +7,20 @@ from utils import logger
 class MobileNetV3(nn.Module):
     def __init__(self, pretrained: bool = True, in_channels: int = 3):
         super().__init__()
-        logger.model_info(f"Initializing MobileNetV3 backbone with pretrained={pretrained}, in_channels={in_channels}")
+        logger.model_info(f"Initializing MobileNetV3 backbone")
 
         try:
             if pretrained:
-                logger.model_info("Loading pretrained MobileNetV3-Small weights from ImageNet")
                 m = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.IMAGENET1K_V1)
             else:
-                logger.model_info("Loading MobileNetV3-Small without pretrained weights")
                 m = mobilenet_v3_small(weights=None)
         except Exception as e:
             logger.warning(f"Could not load pretrained weights: {e}")
-            logger.warning("Falling back to random initialization")
             m = mobilenet_v3_small(weights=None)
 
         self.features = m.features
         self._idxs = [2, 4, 9, len(self.features) - 1]
         self.out_channels = [24, 40, 96, 576]
-        logger.model_info(f"MobileNetV3 backbone initialized with output channels: {self.out_channels}")
-        logger.model_info(f"Feature extraction indices: {self._idxs}")
 
     def forward(self, x):
         try:
@@ -35,7 +30,6 @@ class MobileNetV3(nn.Module):
                 x = layer(x)
                 if i in self._idxs:
                     outs.append(x)
-                    logger.model_info(f"Extracted feature at layer {i}, shape: {x.shape}")
             logger.model_info(f"MobileNetV3 forward pass completed - {len(outs)} feature maps extracted")
             return outs
         except Exception as e:

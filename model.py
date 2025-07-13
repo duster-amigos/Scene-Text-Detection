@@ -22,30 +22,19 @@ class Model(nn.Module):
             backbone_type = model_config.backbone.pop('type')
             neck_type = model_config.neck.pop('type')
             head_type = model_config.head.pop('type')
-            print(f"Model components: Backbone={backbone_type}, Neck={neck_type}, Head={head_type}")
             
             # Build the backbone, neck, and head using the specified types and configurations
-            print("Building backbone...")
             self.backbone = build_backbone(backbone_type, **model_config.backbone)
-            print(f"Backbone built successfully with output channels: {self.backbone.out_channels}")
-            
-            print("Building neck...")
             self.neck = build_neck(neck_type, in_channels=self.backbone.out_channels, **model_config.neck)
-            print(f"Neck built successfully with output channels: {self.neck.out_channels}")
-            
-            print("Building head...")
             self.head = build_head(head_type, in_channels=self.neck.out_channels, **model_config.head)
-            print("Head built successfully")
             
             # Set the model name based on the types of backbone, neck, and head
             self.name = f'{backbone_type}_{neck_type}_{head_type}'
-            print(f"Model initialization completed: {self.name}")
             
             # Print model summary
             total_params = sum(p.numel() for p in self.parameters())
             trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
-            print(f"Total parameters: {total_params:,}")
-            print(f"Trainable parameters: {trainable_params:,}")
+            print(f"Model: {self.name} | Parameters: {total_params:,} | Trainable: {trainable_params:,}")
             
         except Exception as e:
             print(f"Error initializing model: {e}")
@@ -58,29 +47,19 @@ class Model(nn.Module):
         :return: Output tensor after passing through the model and upsampling.
         """
         try:
-            print(f"Model forward pass - input shape: {x.shape}")
             _, _, H, W = x.size()
-            print(f"Input dimensions: H={H}, W={W}")
             
             # Pass the input through the backbone to extract features
-            print("Processing through backbone...")
             backbone_out = self.backbone(x)
-            print(f"Backbone output: {len(backbone_out)} feature maps")
             
             # Pass the backbone output through the neck to refine features
-            print("Processing through neck...")
             neck_out = self.neck(backbone_out)
-            print(f"Neck output shape: {neck_out.shape}")
             
             # Pass the neck output through the head to produce the final output
-            print("Processing through head...")
             y = self.head(neck_out)
-            print(f"Head output shape: {y.shape}")
             
             # Upsample the output to match the input size using bilinear interpolation
-            print(f"Upsampling output to match input size: ({H}, {W})")
             y = F.interpolate(y, size=(H, W), mode='bilinear', align_corners=True)
-            print(f"Final output shape: {y.shape}")
             return y
             
         except Exception as e:

@@ -21,10 +21,8 @@ class BalanceCrossEntropyLoss(nn.Module):
         """
         super(BalanceCrossEntropyLoss, self).__init__()
         try:
-            print(f"Initializing BalanceCrossEntropyLoss: negative_ratio={negative_ratio}, eps={eps}")
             self.negative_ratio = negative_ratio
             self.eps = eps
-            print("BalanceCrossEntropyLoss initialized successfully")
         except Exception as e:
             print(f"Error initializing BalanceCrossEntropyLoss: {e}")
             raise
@@ -43,14 +41,10 @@ class BalanceCrossEntropyLoss(nn.Module):
             Tensor: The computed loss. If return_origin is True, returns a tuple (balanced_loss, original_loss).
         """
         try:
-            print(f"BalanceCrossEntropyLoss forward pass - pred shape: {pred.shape}, gt shape: {gt.shape}, mask shape: {mask.shape}")
-            
             positive = (gt * mask).byte()
             negative = ((1 - gt) * mask).byte()
             positive_count = int(positive.float().sum())
             negative_count = min(int(negative.float().sum()), int(positive_count * self.negative_ratio))
-            
-            print(f"Positive samples: {positive_count}, Negative samples: {negative_count}")
             
             loss = nn.functional.binary_cross_entropy(pred, gt, reduction='none')
             positive_loss = loss * positive.float()
@@ -59,8 +53,6 @@ class BalanceCrossEntropyLoss(nn.Module):
             negative_loss, _ = negative_loss.view(-1).topk(negative_count)
 
             balance_loss = (positive_loss.sum() + negative_loss.sum()) / (positive_count + negative_count + self.eps)
-            
-            print(f"BalanceCrossEntropyLoss computed: {balance_loss.item():.6f}")
 
             if return_origin:
                 return balance_loss, loss
@@ -84,9 +76,7 @@ class DiceLoss(nn.Module):
         """
         super(DiceLoss, self).__init__()
         try:
-            print(f"Initializing DiceLoss: eps={eps}")
             self.eps = eps
-            print("DiceLoss initialized successfully")
         except Exception as e:
             print(f"Error initializing DiceLoss: {e}")
             raise
@@ -105,9 +95,7 @@ class DiceLoss(nn.Module):
             Tensor: The computed Dice loss.
         """
         try:
-            print(f"DiceLoss forward pass - pred shape: {pred.shape}, gt shape: {gt.shape}, mask shape: {mask.shape}")
             result = self._compute(pred, gt, mask, weights)
-            print(f"DiceLoss computed: {result.item():.6f}")
             return result
         except Exception as e:
             print(f"Error in DiceLoss forward pass: {e}")
@@ -159,9 +147,7 @@ class MaskL1Loss(nn.Module):
         """
         super(MaskL1Loss, self).__init__()
         try:
-            print(f"Initializing MaskL1Loss: eps={eps}")
             self.eps = eps
-            print("MaskL1Loss initialized successfully")
         except Exception as e:
             print(f"Error initializing MaskL1Loss: {e}")
             raise
@@ -179,9 +165,7 @@ class MaskL1Loss(nn.Module):
             Tensor: The computed masked L1 loss.
         """
         try:
-            print(f"MaskL1Loss forward pass - pred shape: {pred.shape}, gt shape: {gt.shape}, mask shape: {mask.shape}")
             loss = (torch.abs(pred - gt) * mask).sum() / (mask.sum() + self.eps)
-            print(f"MaskL1Loss computed: {loss.item():.6f}")
             return loss
         except Exception as e:
             print(f"Error in MaskL1Loss forward pass: {e}")
@@ -205,7 +189,6 @@ class DBLoss(nn.Module):
         """
         super().__init__()
         try:
-            print(f"Initializing DBLoss: alpha={alpha}, beta={beta}, ohem_ratio={ohem_ratio}, reduction={reduction}, eps={eps}")
             assert reduction in ['mean', 'sum'], " reduction must in ['mean','sum']"
             self.alpha = alpha
             self.beta = beta
@@ -214,7 +197,6 @@ class DBLoss(nn.Module):
             self.l1_loss = MaskL1Loss(eps=eps)
             self.ohem_ratio = ohem_ratio
             self.reduction = reduction
-            print("DBLoss initialized successfully")
         except Exception as e:
             print(f"Error initializing DBLoss: {e}")
             raise
@@ -239,34 +221,23 @@ class DBLoss(nn.Module):
                 - 'loss': total loss
         """
         try:
-            print(f"DBLoss forward pass - pred shape: {pred.shape}")
-            print(f"Batch keys: {list(batch.keys())}")
-            
             shrink_maps = pred[:, 0, :, :]
             threshold_maps = pred[:, 1, :, :]
             binary_maps = pred[:, 2, :, :]
 
-            print(f"Extracted maps - shrink: {shrink_maps.shape}, threshold: {threshold_maps.shape}, binary: {binary_maps.shape}")
-
             loss_shrink_maps = self.bce_loss(shrink_maps, batch['shrink_map'], batch['shrink_mask'])
             loss_threshold_maps = self.l1_loss(threshold_maps, batch['threshold_map'], batch['threshold_mask'])
-            
-            print(f"Individual losses - shrink: {loss_shrink_maps.item():.6f}, threshold: {loss_threshold_maps.item():.6f}")
             
             metrics = dict(loss_shrink_maps=loss_shrink_maps, loss_threshold_maps=loss_threshold_maps)
             
             if pred.size()[1] > 2:
-                print("Training mode: computing binary map loss")
                 loss_binary_maps = self.dice_loss(binary_maps, batch['shrink_map'], batch['shrink_mask'])
                 metrics['loss_binary_maps'] = loss_binary_maps
                 loss_all = self.alpha * loss_shrink_maps + self.beta * loss_threshold_maps + loss_binary_maps
-                print(f"Binary loss: {loss_binary_maps.item():.6f}")
                 metrics['loss'] = loss_all
             else:
-                print("Inference mode: no binary map loss")
                 metrics['loss'] = loss_shrink_maps
                 
-            print(f"Total loss: {metrics['loss'].item():.6f}")
             return metrics
             
         except Exception as e:

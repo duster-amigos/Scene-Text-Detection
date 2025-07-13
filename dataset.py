@@ -40,17 +40,6 @@ class ICDAR2015Dataset(Dataset):
             self.thresh_min = thresh_min
             self.thresh_max = thresh_max
             
-            # Print dataset parameters
-            params = {
-                "Data Directory": data_dir,
-                "GT Directory": gt_dir,
-                "Min Text Size": min_text_size,
-                "Shrink Ratio": shrink_ratio,
-                "Threshold Min": thresh_min,
-                "Threshold Max": thresh_max
-            }
-            logger.table(params, "Dataset Parameters")
-            
             # Check if directories exist
             if not os.path.exists(data_dir):
                 logger.warning(f"Data directory does not exist: {data_dir}")
@@ -58,14 +47,10 @@ class ICDAR2015Dataset(Dataset):
                 logger.warning(f"Ground truth directory does not exist: {gt_dir}")
             
             self.image_files = [f for f in os.listdir(data_dir) if f.endswith(('.jpg', '.png', '.jpeg'))]
-            logger.data_info(f"Found {len(self.image_files)} images in {data_dir}")
+            logger.data_info(f"Found {len(self.image_files)} images")
             
             if len(self.image_files) == 0:
                 logger.warning("No image files found in data directory")
-            else:
-                logger.data_info(f"Sample files: {', '.join(self.image_files[:3])}")
-                if len(self.image_files) > 3:
-                    logger.data_info(f"... and {len(self.image_files) - 3} more files")
                 
         except Exception as e:
             logger.error(f"Error initializing dataset: {e}")
@@ -77,12 +62,9 @@ class ICDAR2015Dataset(Dataset):
     
     def __getitem__(self, idx):
         try:
-            logger.data_info(f"Loading sample {idx}/{len(self.image_files)}")
-            
             # Load image
             img_name = self.image_files[idx]
             img_path = os.path.join(self.data_dir, img_name)
-            logger.data_info(f"Loading image: {img_path}")
             
             image = cv2.imread(img_path)
             if image is None:
@@ -90,12 +72,10 @@ class ICDAR2015Dataset(Dataset):
             
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             h, w = image.shape[:2]
-            logger.data_info(f"Image loaded successfully: shape={image.shape}, H={h}, W={w}")
             
             # Load ground truth
             gt_name = img_name.replace('.jpg', '.txt').replace('.png', '.txt').replace('.jpeg', '.txt')
             gt_path = os.path.join(self.gt_dir, gt_name)
-            logger.data_info(f"Loading ground truth: {gt_path}")
             
             polygons = []
             if os.path.exists(gt_path):
@@ -111,7 +91,6 @@ class ICDAR2015Dataset(Dataset):
                                     coords = [float(x) for x in parts[:8]]
                                     polygon = np.array(coords).reshape(-1, 2)
                                     polygons.append(polygon)
-                                    logger.data_info(f"Loaded polygon {len(polygons)} from line {line_num + 1}")
                                 else:
                                     logger.warning(f"Invalid line format at line {line_num + 1}: {line}")
                 except Exception as e:
@@ -119,25 +98,18 @@ class ICDAR2015Dataset(Dataset):
             else:
                 logger.warning(f"Ground truth file not found: {gt_path}")
             
-            logger.data_info(f"Loaded {len(polygons)} text regions")
-            
             # Apply transforms
             if self.transform:
-                logger.data_info("Applying transforms to image")
                 image = self.transform(image)
-                logger.data_info(f"Image after transforms: shape={image.shape}")
             
             # Generate ground truth maps at original size first
-            logger.data_info("Generating ground truth maps")
             shrink_map, shrink_mask, threshold_map, threshold_mask = self.generate_gt_maps(
                 h, w, polygons
             )
-            logger.data_info(f"GT maps generated: shrink_map={shrink_map.shape}, threshold_map={threshold_map.shape}")
             
             # Resize ground truth maps to match transformed image size
             if self.transform:
                 target_size = (640, 640)  # Match the transform resize
-                logger.data_info(f"Resizing GT maps to {target_size}")
                 
                 # Resize shrink map
                 shrink_map = F.interpolate(
@@ -168,8 +140,6 @@ class ICDAR2015Dataset(Dataset):
                     size=target_size, 
                     mode='nearest'
                 ).squeeze(0).squeeze(0)
-                
-                logger.data_info(f"GT maps resized: shrink_map={shrink_map.shape}, threshold_map={threshold_map.shape}")
             
             result = {
                 'image': image,
@@ -180,7 +150,6 @@ class ICDAR2015Dataset(Dataset):
                 'filename': img_name
             }
             
-            logger.data_info(f"Sample {idx} loaded successfully")
             return result
             
         except Exception as e:
@@ -204,15 +173,12 @@ class ICDAR2015Dataset(Dataset):
         Generate ground truth maps for training
         """
         try:
-            logger.data_info(f"Generating GT maps for image size: {h}x{w} with {len(polygons)} polygons")
             shrink_map = np.zeros((h, w), dtype=np.float32)
             shrink_mask = np.zeros((h, w), dtype=np.float32)
             threshold_map = np.zeros((h, w), dtype=np.float32)
             threshold_mask = np.zeros((h, w), dtype=np.float32)
             
             for i, polygon in enumerate(polygons):
-                logger.data_info(f"Processing polygon {i+1}/{len(polygons)}")
-                
                 # Create shrink polygon
                 shrink_polygon = self.shrink_polygon(polygon, self.shrink_ratio)
                 
@@ -231,7 +197,6 @@ class ICDAR2015Dataset(Dataset):
             threshold_map = torch.from_numpy(threshold_map).unsqueeze(0)
             threshold_mask = torch.from_numpy(threshold_mask)
             
-            logger.data_info(f"GT maps created successfully: shrink_map={shrink_map.shape}, threshold_map={threshold_map.shape}")
             return shrink_map, shrink_mask, threshold_map, threshold_mask
             
         except Exception as e:
@@ -260,7 +225,6 @@ def get_transforms(image_size=640, is_training=True):
     Get transforms for data augmentation
     """
     try:
-        logger.data_info(f"Creating transforms: image_size={image_size}, is_training={is_training}")
         if is_training:
             transform = transforms.Compose([
                 transforms.ToPILImage(),
@@ -270,7 +234,6 @@ def get_transforms(image_size=640, is_training=True):
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
             ])
-            logger.data_info("Training transforms created with data augmentation")
         else:
             transform = transforms.Compose([
                 transforms.ToPILImage(),
@@ -278,7 +241,6 @@ def get_transforms(image_size=640, is_training=True):
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
             ])
-            logger.data_info("Validation transforms created without augmentation")
         
         return transform
     except Exception as e:

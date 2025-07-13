@@ -17,11 +17,10 @@ class DBHead(nn.Module):
         """
         super().__init__()
         try:
-            logger.model_info(f"Initializing DBHead: in_channels={in_channels}, out_channels={out_channels}, k={k}")
+            logger.model_info(f"Initializing DBHead")
             self.k = k
             # Binarization module: produces shrink maps
             inc4 = in_channels // 4
-            logger.model_info(f"Creating binarization module with intermediate channels: {inc4}")
             self.binarize = nn.Sequential(
                 nn.Conv2d(in_channels, inc4, 3, padding=1),
                 nn.BatchNorm2d(inc4),
@@ -32,14 +31,10 @@ class DBHead(nn.Module):
                 nn.ConvTranspose2d(inc4, 1, 2, 2),
                 nn.Sigmoid())
             self.binarize.apply(self.weights_init)
-            logger.model_info("Binarization module created and initialized")
 
             # Threshold module: produces threshold maps
-            logger.model_info("Creating threshold module")
             self.thresh = self._init_thresh(in_channels)
             self.thresh.apply(self.weights_init)
-            logger.model_info("Threshold module created and initialized")
-            logger.model_info("DBHead initialization completed successfully")
         except Exception as e:
             logger.error(f"Error initializing DBHead: {e}")
             raise
@@ -57,18 +52,12 @@ class DBHead(nn.Module):
             logger.model_info(f"DBHead forward pass - input shape: {x.shape}")
             shrink_maps = self.binarize(x)
             threshold_maps = self.thresh(x)
-            logger.model_info(f"Generated shrink maps shape: {shrink_maps.shape}")
-            logger.model_info(f"Generated threshold maps shape: {threshold_maps.shape}")
             
             if self.training:
-                logger.model_info("Training mode: generating binary maps")
                 binary_maps = self.step_function(shrink_maps, threshold_maps)
                 y = torch.cat((shrink_maps, threshold_maps, binary_maps), dim=1)
-                logger.model_info(f"Training output shape: {y.shape}")
             else:
-                logger.model_info("Inference mode: no binary maps")
                 y = torch.cat((shrink_maps, threshold_maps), dim=1)
-                logger.model_info(f"Inference output shape: {y.shape}")
             return y
         except Exception as e:
             logger.error(f"Error in DBHead forward pass: {e}")
@@ -84,11 +73,9 @@ class DBHead(nn.Module):
             classname = m.__class__.__name__
             if classname.find('Conv') != -1:
                 nn.init.kaiming_normal_(m.weight.data)
-                logger.model_info(f"Initialized {classname} with Kaiming normal")
             elif classname.find('BatchNorm') != -1:
                 m.weight.data.fill_(1.)
                 m.bias.data.fill_(1e-4)
-                logger.model_info(f"Initialized {classname} with default values")
         except Exception as e:
             logger.error(f"Error in weight initialization: {e}")
 
@@ -105,13 +92,11 @@ class DBHead(nn.Module):
             nn.Sequential: The threshold module.
         """
         try:
-            logger.model_info(f"Initializing threshold module: inner_channels={inner_channels}, serial={serial}, smooth={smooth}, bias={bias}")
             in_channels = inner_channels
             if serial:
                 in_channels += 1
 
             ic4 = inner_channels // 4
-            logger.model_info(f"Threshold module intermediate channels: {ic4}")
 
             return nn.Sequential(
                 nn.Conv2d(in_channels, ic4, 3, padding=1, bias=bias),
@@ -139,7 +124,6 @@ class DBHead(nn.Module):
             nn.Module: The upsampling module.
         """
         try:
-            logger.model_info(f"Initializing upsampling: in_channels={in_channels}, out_channels={out_channels}, smooth={smooth}")
             if smooth:
                 inter_out_channels = out_channels
                 if out_channels == 1:
@@ -169,7 +153,6 @@ class DBHead(nn.Module):
         try:
             # return torch.reciprocal(1 + torch.exp(-self.k * (x - y)))
             result = torch.sigmoid(self.k * (x - y))
-            logger.model_info(f"Step function applied with k={self.k}, output shape: {result.shape}")
             return result
         except Exception as e:
             logger.error(f"Error in step function: {e}")
