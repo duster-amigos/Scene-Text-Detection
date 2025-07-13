@@ -1,7 +1,8 @@
 # neck_fpem_ffm.py
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from torch import nn
+from utils.logger import logger, log_exception
 
 class ConvBnRelu(nn.Module):
     """
@@ -46,158 +47,221 @@ class ConvBnRelu(nn.Module):
 
 class FPEM_FFM(nn.Module):
     """
-    Feature Pyramid Enhancement Module (FPEM) and Feature Fusion Module (FFM) for combining multi-level features.
+    Feature Pyramid Enhancement Module (FPEM) with Feature Fusion Module (FFM)
     """
-    def __init__(self, in_channels, inner_channels=128, fpem_repeat=2, **kwargs):
+    def __init__(self, in_channels, inner_channels=128):
         """
-        Initialize the FPEM_FFM module.
-
+        Initialize FPEM_FFM module.
+        
         Args:
-            in_channels (list or tuple): List of input channel sizes from the backbone network.
-            inner_channels (int, optional): Number of channels in the intermediate feature maps. Defaults to 128.
-            fpem_repeat (int, optional): Number of times to repeat the FPEM module. Defaults to 2.
-            **kwargs: Additional keyword arguments.
+            in_channels (list): List of input channel numbers for each level
+            inner_channels (int): Number of inner channels
         """
         super().__init__()
-        self.conv_out = inner_channels
-        inplace = True
-        # Reduce layers to adjust channel dimensions
-        self.reduce_conv_c2 = ConvBnRelu(in_channels[0], inner_channels, kernel_size=1, inplace=inplace)
-        self.reduce_conv_c3 = ConvBnRelu(in_channels[1], inner_channels, kernel_size=1, inplace=inplace)
-        self.reduce_conv_c4 = ConvBnRelu(in_channels[2], inner_channels, kernel_size=1, inplace=inplace)
-        self.reduce_conv_c5 = ConvBnRelu(in_channels[3], inner_channels, kernel_size=1, inplace=inplace)
-        self.fpems = nn.ModuleList()
-        for i in range(fpem_repeat):
-            self.fpems.append(FPEM(self.conv_out))
-        self.out_channels = self.conv_out * 4
+        logger.info(f"Initializing FPEM_FFM (in_channels={in_channels}, inner_channels={inner_channels})")
+        
+        try:
+            self.in_channels = in_channels
+            self.inner_channels = inner_channels
+            
+            # Reduce channels for each input level
+            logger.debug("Building input reduction layers...")
+            self.in_conv = nn.ModuleList()
+            for c in in_channels:
+                self.in_conv.append(
+                    nn.Sequential(
+                        nn.Conv2d(c, inner_channels, 1),
+                        nn.BatchNorm2d(inner_channels),
+                        nn.ReLU(inplace=True)
+                    )
+                )
+            
+            # FPEM module
+            logger.debug("Building FPEM modules...")
+            self.fpem1 = FPEM(inner_channels)
+            self.fpem2 = FPEM(inner_channels)
+            
+            # FFM module
+            logger.debug("Building FFM module...")
+            self.out_conv = nn.Sequential(
+                nn.Conv2d(inner_channels * 4, inner_channels * 4, 3, padding=1),
+                nn.BatchNorm2d(inner_channels * 4),
+                nn.ReLU(inplace=True)
+            )
+            
+            self.out_channels = inner_channels * 4
+            logger.info("FPEM_FFM initialized successfully")
+            
+        except Exception as e:
+            log_exception(e, "Failed to initialize FPEM_FFM")
+            raise RuntimeError(f"FPEM_FFM initialization failed: {str(e)}")
 
     def forward(self, x):
         """
-        Forward pass of the FPEM_FFM module.
-
+        Forward pass of FPEM_FFM.
+        
         Args:
-            x (tuple): Tuple of four tensors (c2, c3, c4, c5) from the backbone network.
-
+            x (list): List of input feature maps from different levels
+            
         Returns:
-            Tensor: The fused feature map.
+            Tensor: Fused feature map
         """
-        c2, c3, c4, c5 = x
-        # Reduce channel dimensions
-        c2 = self.reduce_conv_c2(c2)
-        c3 = self.reduce_conv_c3(c3)
-        c4 = self.reduce_conv_c4(c4)
-        c5 = self.reduce_conv_c5(c5)
-
-        # Apply FPEM modules and accumulate features
-        for i, fpem in enumerate(self.fpems):
-            c2, c3, c4, c5 = fpem(c2, c3, c4, c5)
-            if i == 0:
-                c2_ffm = c2
-                c3_ffm = c3
-                c4_ffm = c4
-                c5_ffm = c5
-            else:
-                c2_ffm += c2
-                c3_ffm += c3
-                c4_ffm += c4
-                c5_ffm += c5
-
-        # Feature Fusion: upsample and concatenate
-        c5 = F.interpolate(c5_ffm, size=c2_ffm.size()[-2:], mode='bilinear', align_corners=False)
-        c4 = F.interpolate(c4_ffm, size=c2_ffm.size()[-2:], mode='bilinear', align_corners=False)
-        c3 = F.interpolate(c3_ffm, size=c2_ffm.size()[-2:], mode='bilinear', align_corners=False)
-        Fy = torch.cat([c2_ffm, c3, c4, c5], dim=1)
-        return Fy
+        try:
+            logger.debug(f"FPEM_FFM forward pass - Input shapes: {[f.shape for f in x]}")
+            
+            # Reduce input channels
+            features = []
+            for i, feature in enumerate(x):
+                conv_out = self.in_conv[i](feature)
+                features.append(conv_out)
+                logger.debug(f"Reduced feature {i+1} shape: {conv_out.shape}")
+            
+            # Apply FPEM twice
+            fpem1_out = self.fpem1(features)
+            logger.debug(f"FPEM1 output shapes: {[f.shape for f in fpem1_out]}")
+            
+            fpem2_out = self.fpem2(fpem1_out)
+            logger.debug(f"FPEM2 output shapes: {[f.shape for f in fpem2_out]}")
+            
+            # Resize and concatenate features
+            out_size = fpem2_out[0].size()[2:]
+            outputs = []
+            for i, feature in enumerate(fpem2_out):
+                resized = F.interpolate(feature, size=out_size, mode='bilinear', align_corners=True)
+                outputs.append(resized)
+                logger.debug(f"Resized feature {i+1} shape: {resized.shape}")
+            
+            # Concatenate and apply final convolution
+            out = torch.cat(outputs, dim=1)
+            logger.debug(f"Concatenated feature shape: {out.shape}")
+            
+            out = self.out_conv(out)
+            logger.debug(f"Final output shape: {out.shape}")
+            
+            return out
+            
+        except Exception as e:
+            log_exception(e, "Failed during FPEM_FFM forward pass")
+            raise RuntimeError(f"FPEM_FFM forward pass failed: {str(e)}")
 
 class FPEM(nn.Module):
     """
-    Feature Pyramid Enhancement Module (FPEM) for enhancing multi-level features.
+    Feature Pyramid Enhancement Module
     """
-    def __init__(self, in_channels=128):
+    def __init__(self, channels):
         """
-        Initialize the FPEM module.
-
+        Initialize FPEM module.
+        
         Args:
-            in_channels (int, optional): Number of input channels. Defaults to 128.
+            channels (int): Number of channels
         """
         super().__init__()
-        self.up_add1 = SeparableConv2d(in_channels, in_channels, 1)
-        self.up_add2 = SeparableConv2d(in_channels, in_channels, 1)
-        self.up_add3 = SeparableConv2d(in_channels, in_channels, 1)
-        self.down_add1 = SeparableConv2d(in_channels, in_channels, 2)
-        self.down_add2 = SeparableConv2d(in_channels, in_channels, 2)
-        self.down_add3 = SeparableConv2d(in_channels, in_channels, 2)
-
-    def forward(self, c2, c3, c4, c5):
-        """
-        Forward pass of the FPEM module.
-
-        Args:
-            c2 (Tensor): Feature map from level 2.
-            c3 (Tensor): Feature map from level 3.
-            c4 (Tensor): Feature map from level 4.
-            c5 (Tensor): Feature map from level 5.
-
-        Returns:
-            tuple: Enhanced feature maps (c2, c3, c4, c5).
-        """
-        # Up stage: top-down path
-        c4 = self.up_add1(self._upsample_add(c5, c4))
-        c3 = self.up_add2(self._upsample_add(c4, c3))
-        c2 = self.up_add3(self._upsample_add(c3, c2))
-
-        # Down stage: bottom-up path
-        c3 = self.down_add1(self._upsample_add(c3, c2))
-        c4 = self.down_add2(self._upsample_add(c4, c3))
-        c5 = self.down_add3(self._upsample_add(c5, c4))
-        return c2, c3, c4, c5
-
-    def _upsample_add(self, x, y):
-        """
-        Upsample x to match y's spatial size and add them element-wise.
-
-        Args:
-            x (Tensor): Feature map to upsample.
-            y (Tensor): Feature map to add to.
-
-        Returns:
-            Tensor: The sum of upsampled x and y.
-        """
-        return F.interpolate(x, size=y.size()[2:], mode='bilinear', align_corners=False) + y
-
-class SeparableConv2d(nn.Module):
-    """
-    Separable Convolution module consisting of depthwise and pointwise convolutions.
-    """
-    def __init__(self, in_channels, out_channels, stride=1):
-        """
-        Initialize the SeparableConv2d module.
-
-        Args:
-            in_channels (int): Number of input channels.
-            out_channels (int): Number of output channels.
-            stride (int, optional): Stride of the depthwise convolution. Defaults to 1.
-        """
-        super(SeparableConv2d, self).__init__()
-
-        self.depthwise_conv = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3, padding=1,
-                                        stride=stride, groups=in_channels)
-        self.pointwise_conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
-        self.bn = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU()
+        logger.debug(f"Initializing FPEM (channels={channels})")
+        
+        try:
+            # Up convolution
+            self.up_conv = nn.ModuleList([
+                nn.Sequential(
+                    nn.Conv2d(channels, channels, 3, padding=1),
+                    nn.BatchNorm2d(channels),
+                    nn.ReLU(inplace=True)
+                ) for _ in range(3)
+            ])
+            
+            # Down convolution
+            self.down_conv = nn.ModuleList([
+                nn.Sequential(
+                    nn.Conv2d(channels, channels, 3, padding=1),
+                    nn.BatchNorm2d(channels),
+                    nn.ReLU(inplace=True)
+                ) for _ in range(3)
+            ])
+            
+            logger.debug("FPEM initialized successfully")
+            
+        except Exception as e:
+            log_exception(e, "Failed to initialize FPEM")
+            raise RuntimeError(f"FPEM initialization failed: {str(e)}")
 
     def forward(self, x):
         """
-        Forward pass of the SeparableConv2d module.
-
+        Forward pass of FPEM.
+        
         Args:
-            x (Tensor): Input tensor.
-
+            x (list): List of input feature maps
+            
         Returns:
-            Tensor: Output tensor after separable convolution, batch normalization, and ReLU activation.
+            list: Enhanced feature maps
         """
-        x = self.depthwise_conv(x)
-        x = self.pointwise_conv(x)
-        x = self.bn(x)
-        x = self.relu(x)
-        return x
+        try:
+            logger.debug(f"FPEM forward pass - Input shapes: {[f.shape for f in x]}")
+            
+            # Up path
+            up_features = []
+            up_x = x[3]  # Start from the deepest level
+            up_features.append(up_x)
+            
+            for i in range(2, -1, -1):
+                logger.debug(f"Up path - Processing level {i+1}")
+                up_size = x[i].size()[2:]
+                up_x = F.interpolate(up_x, size=up_size, mode='bilinear', align_corners=True)
+                up_x = x[i] + up_x
+                up_x = self.up_conv[i](up_x)
+                up_features.insert(0, up_x)
+                logger.debug(f"Up feature {i+1} shape: {up_x.shape}")
+            
+            # Down path
+            down_features = []
+            down_x = up_features[0]
+            down_features.append(down_x)
+            
+            for i in range(3):
+                logger.debug(f"Down path - Processing level {i+1}")
+                down_x = F.adaptive_avg_pool2d(down_x, up_features[i+1].size()[2:])
+                down_x = up_features[i+1] + down_x
+                down_x = self.down_conv[i](down_x)
+                down_features.append(down_x)
+                logger.debug(f"Down feature {i+1} shape: {down_x.shape}")
+            
+            return down_features
+            
+        except Exception as e:
+            log_exception(e, "Failed during FPEM forward pass")
+            raise RuntimeError(f"FPEM forward pass failed: {str(e)}")
+
+if __name__ == '__main__':
+    # Test the FPEM_FFM module
+    try:
+        logger.info("Testing FPEM_FFM module...")
+        
+        # Test parameters
+        batch_size = 2
+        in_channels = [24, 40, 96, 576]  # MobileNetV3 output channels
+        inner_channels = 256
+        feature_sizes = [(80, 80), (40, 40), (20, 20), (20, 20)]
+        
+        # Create dummy input features
+        features = []
+        for i, (c, size) in enumerate(zip(in_channels, feature_sizes)):
+            feature = torch.randn(batch_size, c, size[0], size[1])
+            features.append(feature)
+            logger.debug(f"Created feature {i+1} with shape: {feature.shape}")
+        
+        # Initialize and test FPEM_FFM
+        fpem_ffm = FPEM_FFM(in_channels, inner_channels)
+        logger.info("FPEM_FFM created successfully")
+        
+        # Test forward pass
+        output = fpem_ffm(features)
+        logger.info(f"Output shape: {output.shape}")
+        logger.info("Forward pass completed successfully")
+        
+        # Verify output channels
+        assert output.shape[1] == inner_channels * 4, "Output channels mismatch"
+        logger.info("Output channel verification passed")
+        
+        logger.info("All FPEM_FFM tests passed successfully!")
+        
+    except Exception as e:
+        log_exception(e, "FPEM_FFM test failed")
+        logger.error("Test failed. See error details above.")
