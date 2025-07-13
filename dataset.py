@@ -7,6 +7,7 @@ import json
 import random
 from PIL import Image
 import torchvision.transforms as transforms
+from utils import logger
 
 class ICDAR2015Dataset(Dataset):
     """
@@ -26,7 +27,9 @@ class ICDAR2015Dataset(Dataset):
             thresh_max (float): Maximum threshold for threshold map
         """
         try:
-            print(f"Initializing ICDAR2015Dataset: data_dir={data_dir}, gt_dir={gt_dir}, is_training={is_training}")
+            dataset_type = "Training" if is_training else "Validation"
+            logger.data_info(f"Initializing ICDAR2015 {dataset_type} Dataset")
+            
             self.data_dir = data_dir
             self.gt_dir = gt_dir
             self.transform = transform
@@ -36,24 +39,35 @@ class ICDAR2015Dataset(Dataset):
             self.thresh_min = thresh_min
             self.thresh_max = thresh_max
             
-            print(f"Dataset parameters: min_text_size={min_text_size}, shrink_ratio={shrink_ratio}, thresh_min={thresh_min}, thresh_max={thresh_max}")
+            # Print dataset parameters
+            params = {
+                "Data Directory": data_dir,
+                "GT Directory": gt_dir,
+                "Min Text Size": min_text_size,
+                "Shrink Ratio": shrink_ratio,
+                "Threshold Min": thresh_min,
+                "Threshold Max": thresh_max
+            }
+            logger.table(params, "Dataset Parameters")
             
             # Check if directories exist
             if not os.path.exists(data_dir):
-                print(f"Warning: Data directory does not exist: {data_dir}")
+                logger.warning(f"Data directory does not exist: {data_dir}")
             if not os.path.exists(gt_dir):
-                print(f"Warning: Ground truth directory does not exist: {gt_dir}")
+                logger.warning(f"Ground truth directory does not exist: {gt_dir}")
             
             self.image_files = [f for f in os.listdir(data_dir) if f.endswith(('.jpg', '.png', '.jpeg'))]
-            print(f"Found {len(self.image_files)} images in {data_dir}")
+            logger.data_info(f"Found {len(self.image_files)} images in {data_dir}")
             
             if len(self.image_files) == 0:
-                print("Warning: No image files found in data directory")
+                logger.warning("No image files found in data directory")
             else:
-                print(f"Sample image files: {self.image_files[:5]}")
+                logger.data_info(f"Sample files: {', '.join(self.image_files[:3])}")
+                if len(self.image_files) > 3:
+                    logger.data_info(f"... and {len(self.image_files) - 3} more files")
                 
         except Exception as e:
-            print(f"Error initializing dataset: {e}")
+            logger.error(f"Error initializing dataset: {e}")
             self.image_files = []
             raise
     

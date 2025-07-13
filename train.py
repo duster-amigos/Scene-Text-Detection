@@ -11,60 +11,75 @@ from model import Model
 from dataset import ICDAR2015Dataset, get_transforms
 from losses import DBLoss
 import json
+from utils import logger, print_device_info, print_model_summary, print_config_summary, print_training_progress, print_dataset_info, print_checkpoint_info
 
 class Trainer:
     def __init__(self, config):
+        logger.header("Initializing DBNet Trainer")
+        
         self.config = config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        print(f"Using device: {self.device}")
+        logger.gpu_info(f"Using device: {self.device}")
+        
+        # Print configuration summary
+        print_config_summary(config)
         
         # Create model
         try:
+            logger.section("Model Creation")
             self.model = Model(config['model']).to(self.device)
-            print(f"Model created: {self.model.name}")
-            print(f"Total parameters: {sum(p.numel() for p in self.model.parameters())}")
+            print_model_summary(self.model)
+            logger.end_section()
         except Exception as e:
-            print(f"Error creating model: {e}")
+            logger.error(f"Error creating model: {e}")
             raise
         
         # Create loss function
         try:
+            logger.section("Loss Function")
             self.criterion = DBLoss(**config['loss'])
-            print("Loss function created")
+            logger.success("Loss function created successfully")
+            logger.end_section()
         except Exception as e:
-            print(f"Error creating loss function: {e}")
+            logger.error(f"Error creating loss function: {e}")
             raise
         
         # Create optimizer
         try:
+            logger.section("Optimizer")
             self.optimizer = optim.AdamW(
                 self.model.parameters(),
                 lr=config['training']['learning_rate'],
                 weight_decay=config['training']['weight_decay']
             )
-            print("Optimizer created")
+            logger.success("Optimizer created successfully")
+            logger.end_section()
         except Exception as e:
-            print(f"Error creating optimizer: {e}")
+            logger.error(f"Error creating optimizer: {e}")
             raise
         
         # Create scheduler
         try:
+            logger.section("Learning Rate Scheduler")
             self.scheduler = optim.lr_scheduler.StepLR(
                 self.optimizer,
                 step_size=config['training']['lr_step_size'],
                 gamma=config['training']['lr_gamma']
             )
-            print("Scheduler created")
+            logger.success("Scheduler created successfully")
+            logger.end_section()
         except Exception as e:
-            print(f"Error creating scheduler: {e}")
+            logger.error(f"Error creating scheduler: {e}")
             raise
         
         # Create datasets and dataloaders
         try:
+            logger.section("Data Loading")
             self._create_dataloaders()
-            print("Data loaders created")
+            logger.success("Data loaders created successfully")
+            logger.end_section()
         except Exception as e:
-            print(f"Error creating data loaders: {e}")
+            logger.error(f"Error creating data loaders: {e}")
             raise
         
         # Training state
@@ -73,23 +88,31 @@ class Trainer:
         
         # Load checkpoint if exists
         if config['training']['resume'] and os.path.exists(config['training']['checkpoint_path']):
+            logger.checkpoint_info("Resuming from checkpoint")
             self._load_checkpoint()
+        
+        logger.success("Trainer initialization completed successfully!")
     
     def _create_dataloaders(self):
         """Create training and validation data loaders"""
         try:
+            logger.subheader("Creating Data Transforms")
+            
             # Training transforms
             train_transform = get_transforms(
                 image_size=self.config['training']['image_size'],
                 is_training=True
             )
+            logger.success("Training transforms created")
             
             # Validation transforms
             val_transform = get_transforms(
                 image_size=self.config['training']['image_size'],
                 is_training=False
             )
+            logger.success("Validation transforms created")
             
+            logger.subheader("Loading Training Dataset")
             # Training dataset
             self.train_dataset = ICDAR2015Dataset(
                 data_dir=self.config['data']['train_images'],
@@ -97,6 +120,7 @@ class Trainer:
                 transform=train_transform,
                 is_training=True
             )
+            print_dataset_info(self.train_dataset, "Training")
             
             # Validation dataset (only if validation paths are provided)
             if (self.config['data']['val_images'] and 
@@ -104,17 +128,19 @@ class Trainer:
                 os.path.exists(self.config['data']['val_images']) and 
                 os.path.exists(self.config['data']['val_labels'])):
                 
+                logger.subheader("Loading Validation Dataset")
                 self.val_dataset = ICDAR2015Dataset(
                     data_dir=self.config['data']['val_images'],
                     gt_dir=self.config['data']['val_labels'],
                     transform=val_transform,
                     is_training=False
                 )
-                print(f"Validation dataset loaded: {len(self.val_dataset)} samples")
+                print_dataset_info(self.val_dataset, "Validation")
             else:
-                print("No validation data provided or validation directories don't exist. Training without validation.")
+                logger.warning("No validation data provided or validation directories don't exist. Training without validation.")
                 self.val_dataset = None
             
+            logger.subheader("Creating Data Loaders")
             # Data loaders
             self.train_loader = DataLoader(
                 self.train_dataset,
@@ -123,6 +149,7 @@ class Trainer:
                 num_workers=self.config['training']['num_workers'],
                 pin_memory=True
             )
+            logger.success("Training data loader created")
             
             if self.val_dataset is not None:
                 self.val_loader = DataLoader(
@@ -132,15 +159,13 @@ class Trainer:
                     num_workers=self.config['training']['num_workers'],
                     pin_memory=True
                 )
-                print(f"Validation samples: {len(self.val_dataset)}")
+                logger.success("Validation data loader created")
             else:
                 self.val_loader = None
-                print("No validation loader created")
-            
-            print(f"Training samples: {len(self.train_dataset)}")
+                logger.info("No validation loader created")
             
         except Exception as e:
-            print(f"Error creating data loaders: {e}")
+            logger.error(f"Error creating data loaders: {e}")
             raise
     
     def _load_checkpoint(self):
@@ -324,11 +349,12 @@ class Trainer:
     
     def train(self):
         """Main training loop"""
-        print("Starting training...")
+        logger.header("Starting DBNet Training")
         
         try:
             for epoch in range(self.start_epoch, self.config['training']['epochs']):
-                print(f"\nEpoch {epoch + 1}/{self.config['training']['epochs']}")
+                # Print training progress
+                current_lr = self.optimizer.param_groups[0]['lr']
                 
                 # Training
                 train_loss = self.train_epoch(epoch + 1)
@@ -341,14 +367,23 @@ class Trainer:
                     is_best = val_loss < self.best_loss
                     if is_best:
                         self.best_loss = val_loss
-                        print(f"New best validation loss: {self.best_loss:.4f}")
+                        logger.success(f"New best validation loss: {self.best_loss:.4f}")
                 else:
                     # No validation data, save checkpoint based on training loss
                     val_loss = float('inf')
                     is_best = train_loss < self.best_loss
                     if is_best:
                         self.best_loss = train_loss
-                        print(f"New best training loss: {self.best_loss:.4f}")
+                        logger.success(f"New best training loss: {self.best_loss:.4f}")
+                
+                # Print epoch summary
+                print_training_progress(
+                    epoch + 1, 
+                    self.config['training']['epochs'], 
+                    train_loss, 
+                    val_loss if self.val_loader is not None else None,
+                    current_lr
+                )
                 
                 # Update scheduler
                 self.scheduler.step()
@@ -356,13 +391,11 @@ class Trainer:
                 # Save checkpoint
                 self._save_checkpoint(epoch + 1, is_best)
                 
-                # Print learning rate
-                current_lr = self.optimizer.param_groups[0]['lr']
-                print(f"Learning rate: {current_lr:.6f}")
-                
         except Exception as e:
-            print(f"Error in training: {e}")
+            logger.error(f"Error in training: {e}")
             raise
+        
+        logger.success("Training completed successfully!")
 
 def main():
     parser = argparse.ArgumentParser(description='Train DBNet for text detection')
@@ -370,16 +403,24 @@ def main():
     args = parser.parse_args()
     
     try:
+        logger.header("DBNet Text Detection Training")
+        
+        # Print device information
+        print_device_info()
+        
         # Load configuration
+        logger.section("Loading Configuration")
         with open(args.config, 'r') as f:
             config = json.load(f)
+        logger.success(f"Configuration loaded from: {args.config}")
+        logger.end_section()
         
         # Create trainer and start training
         trainer = Trainer(config)
         trainer.train()
         
     except Exception as e:
-        print(f"Error in main: {e}")
+        logger.error(f"Error in main: {e}")
         raise
 
 if __name__ == '__main__':
