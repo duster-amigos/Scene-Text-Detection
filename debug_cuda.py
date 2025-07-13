@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Debug script to test CUDA model creation step by step.
+Debug script to test CUDA model creation step by step with safer tensor handling.
 """
 
 import os
@@ -11,6 +11,14 @@ import traceback
 
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+def safe_cuda_operation(func, *args, **kwargs):
+    """Safely execute CUDA operations with proper error handling."""
+    try:
+        return func(*args, **kwargs)
+    except Exception as e:
+        print(f"CUDA operation failed: {e}")
+        return None
 
 def test_cuda_availability():
     """Test CUDA availability and basic operations."""
@@ -26,14 +34,22 @@ def test_cuda_availability():
             print(f"Device name: {torch.cuda.get_device_name()}")
             print(f"Device memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
             
-            # Test basic CUDA operations
-            x = torch.randn(2, 3, 64, 64)
-            x_cuda = x.cuda()
-            print(f"Basic tensor moved to CUDA: {x_cuda.device}")
+            # Test basic CUDA operations with safer initialization
+            print("Testing basic tensor operations...")
+            
+            # Create tensor on CPU first with explicit values
+            x = torch.zeros(2, 3, 64, 64, dtype=torch.float32)
+            print(f"CPU tensor created: {x.shape}, dtype: {x.dtype}")
+            
+            # Move to CUDA with explicit device
+            device = torch.device('cuda:0')
+            x_cuda = x.to(device)
+            print(f"Tensor moved to CUDA: {x_cuda.device}")
             
             # Test simple model on CUDA
+            print("Testing simple model...")
             simple_model = nn.Conv2d(3, 64, 3, padding=1)
-            simple_model = simple_model.cuda()
+            simple_model = simple_model.to(device)
             output = simple_model(x_cuda)
             print(f"Simple model output shape: {output.shape}")
             
@@ -61,14 +77,27 @@ def test_backbone_cuda():
         backbone = MobileNetV3(pretrained=False, in_channels=3)
         print("Backbone created on CPU successfully")
         
-        # Move to CUDA
+        # Initialize weights before moving to CUDA
+        print("Initializing backbone weights...")
+        for name, m in backbone.named_modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+        print("Backbone weights initialized")
+        
+        # Move to CUDA with explicit device
         print("Moving backbone to CUDA...")
-        backbone = backbone.cuda()
+        device = torch.device('cuda:0')
+        backbone = backbone.to(device)
         print("Backbone moved to CUDA successfully")
         
-        # Test forward pass
+        # Test forward pass with safe tensor creation
         print("Testing forward pass...")
-        x = torch.randn(2, 3, 640, 640).cuda()
+        x = torch.zeros(2, 3, 640, 640, dtype=torch.float32).to(device)
         features = backbone(x)
         print(f"Backbone output shapes: {[f.shape for f in features]}")
         
@@ -93,18 +122,31 @@ def test_neck_cuda():
         neck = FPEM_FFM(in_channels=[24, 40, 96, 576], inner_channels=256)
         print("Neck created on CPU successfully")
         
+        # Initialize weights
+        print("Initializing neck weights...")
+        for name, m in neck.named_modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+        print("Neck weights initialized")
+        
         # Move to CUDA
         print("Moving neck to CUDA...")
-        neck = neck.cuda()
+        device = torch.device('cuda:0')
+        neck = neck.to(device)
         print("Neck moved to CUDA successfully")
         
-        # Test forward pass
+        # Test forward pass with safe tensor creation
         print("Testing forward pass...")
         features = [
-            torch.randn(2, 24, 80, 80).cuda(),
-            torch.randn(2, 40, 40, 40).cuda(),
-            torch.randn(2, 96, 20, 20).cuda(),
-            torch.randn(2, 576, 20, 20).cuda()
+            torch.zeros(2, 24, 80, 80, dtype=torch.float32).to(device),
+            torch.zeros(2, 40, 40, 40, dtype=torch.float32).to(device),
+            torch.zeros(2, 96, 20, 20, dtype=torch.float32).to(device),
+            torch.zeros(2, 576, 20, 20, dtype=torch.float32).to(device)
         ]
         output = neck(features)
         print(f"Neck output shape: {output.shape}")
@@ -130,14 +172,27 @@ def test_head_cuda():
         head = DBHead(in_channels=1024, out_channels=2, k=50)
         print("Head created on CPU successfully")
         
+        # Initialize weights
+        print("Initializing head weights...")
+        for name, m in head.named_modules():
+            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+        print("Head weights initialized")
+        
         # Move to CUDA
         print("Moving head to CUDA...")
-        head = head.cuda()
+        device = torch.device('cuda:0')
+        head = head.to(device)
         print("Head moved to CUDA successfully")
         
-        # Test forward pass
+        # Test forward pass with safe tensor creation
         print("Testing forward pass...")
-        x = torch.randn(2, 1024, 160, 160).cuda()
+        x = torch.zeros(2, 1024, 160, 160, dtype=torch.float32).to(device)
         
         # Test training mode
         head.train()
@@ -200,19 +255,15 @@ def test_complete_model_cuda():
                 nn.init.constant_(m.bias, 0)
         print("Weights initialized successfully")
         
-        # Clear CUDA cache
-        print("Clearing CUDA cache...")
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
-        
-        # Move model to CUDA
+        # Move model to CUDA with explicit device
         print("Moving model to CUDA...")
-        model = model.cuda()
+        device = torch.device('cuda:0')
+        model = model.to(device)
         print("Model moved to CUDA successfully")
         
-        # Test forward pass
+        # Test forward pass with safe tensor creation
         print("Testing forward pass...")
-        x = torch.randn(2, 3, 640, 640).cuda()
+        x = torch.zeros(2, 3, 640, 640, dtype=torch.float32).to(device)
         
         # Test training mode
         model.train()
@@ -233,7 +284,7 @@ def test_complete_model_cuda():
 
 def main():
     """Run all CUDA tests."""
-    print("Starting CUDA Debug Tests")
+    print("Starting CUDA Debug Tests (Safe Mode)")
     print("=" * 60)
     
     tests = [
