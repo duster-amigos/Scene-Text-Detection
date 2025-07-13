@@ -28,14 +28,29 @@ class BalanceCrossEntropyLoss(nn.Module):
         Compute the balanced cross-entropy loss.
 
         Args:
-            pred (Tensor): Predicted probabilities, shape :math:`(N, 1, H, W)`.
-            gt (Tensor): Ground truth binary labels, shape :math:`(N, 1, H, W)`.
+            pred (Tensor): Predicted probabilities, shape :math:`(N, 1, H, W)` or :math:`(N, H, W)`.
+            gt (Tensor): Ground truth binary labels, shape :math:`(N, 1, H, W)` or :math:`(N, H, W)`.
             mask (Tensor): Mask indicating positive regions, shape :math:`(N, H, W)`.
             return_origin (bool): If True, return the original loss along with the balanced loss.
 
         Returns:
             Tensor: The computed loss. If return_origin is True, returns a tuple (balanced_loss, original_loss).
         """
+        # Ensure pred and gt have the same shape
+        if pred.dim() == 4 and gt.dim() == 4:
+            # Both are (N, 1, H, W)
+            pred = pred.squeeze(1)  # Remove channel dimension
+            gt = gt.squeeze(1)      # Remove channel dimension
+        elif pred.dim() == 3 and gt.dim() == 4:
+            # pred is (N, H, W), gt is (N, 1, H, W)
+            gt = gt.squeeze(1)      # Remove channel dimension
+        elif pred.dim() == 4 and gt.dim() == 3:
+            # pred is (N, 1, H, W), gt is (N, H, W)
+            pred = pred.squeeze(1)  # Remove channel dimension
+        
+        # Now both pred and gt should be (N, H, W)
+        assert pred.shape == gt.shape, f"Shape mismatch: pred {pred.shape} vs gt {gt.shape}"
+        
         positive = (gt * mask).byte()
         negative = ((1 - gt) * mask).byte()
         positive_count = int(positive.float().sum())

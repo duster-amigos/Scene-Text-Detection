@@ -37,7 +37,17 @@ def evaluate_detections(gt_boxes, pred_boxes, pred_scores, iou_threshold=0.5):
         pred_matched: List of matched prediction indices
         gt_matched: List of matched ground truth indices
     """
-    if len(gt_boxes) == 0 or len(pred_boxes) == 0:
+    # Check if boxes are empty
+    if isinstance(gt_boxes, np.ndarray):
+        if gt_boxes.size == 0:
+            return 0, 0, 0, [], []
+    elif len(gt_boxes) == 0:
+        return 0, 0, 0, [], []
+        
+    if isinstance(pred_boxes, np.ndarray):
+        if pred_boxes.size == 0:
+            return 0, 0, 0, [], []
+    elif len(pred_boxes) == 0:
         return 0, 0, 0, [], []
 
     # Convert boxes to polygons

@@ -46,12 +46,12 @@ class ICDAR2015Dataset(Dataset):
                 A.HueSaturationValue(p=0.5),
                 A.Normalize(),
                 ToTensorV2()
-            ])
+            ], additional_targets={'mask0': 'mask', 'mask1': 'mask', 'mask2': 'mask', 'mask3': 'mask'})
         else:
             return A.Compose([
                 A.Normalize(),
                 ToTensorV2()
-            ])
+            ], additional_targets={'mask0': 'mask', 'mask1': 'mask', 'mask2': 'mask', 'mask3': 'mask'})
 
     def __len__(self):
         return len(self.img_files)
@@ -89,33 +89,16 @@ class ICDAR2015Dataset(Dataset):
         
         # Apply augmentations
         if self.transform:
-            augmented = self.transform(image=img, 
-                                     masks=[target['shrink_map'],
-                                           target['threshold_map'],
-                                           target['shrink_mask'],
-                                           target['threshold_mask']])
+            # Apply image augmentation only
+            augmented = self.transform(image=img)
             img = augmented['image']
             
-            # Handle tensor conversion properly
-            if isinstance(augmented['masks'][0], torch.Tensor):
-                target['shrink_map'] = augmented['masks'][0].unsqueeze(0)
-            else:
-                target['shrink_map'] = torch.from_numpy(augmented['masks'][0]).unsqueeze(0)
-                
-            if isinstance(augmented['masks'][1], torch.Tensor):
-                target['threshold_map'] = augmented['masks'][1].unsqueeze(0)
-            else:
-                target['threshold_map'] = torch.from_numpy(augmented['masks'][1]).unsqueeze(0)
-                
-            if isinstance(augmented['masks'][2], torch.Tensor):
-                target['shrink_mask'] = augmented['masks'][2]
-            else:
-                target['shrink_mask'] = torch.from_numpy(augmented['masks'][2])
-                
-            if isinstance(augmented['masks'][3], torch.Tensor):
-                target['threshold_mask'] = augmented['masks'][3]
-            else:
-                target['threshold_mask'] = torch.from_numpy(augmented['masks'][3])
+            # Keep targets as numpy arrays for now
+            # They will be converted to tensors later if needed
+            target['shrink_map'] = torch.from_numpy(target['shrink_map']).unsqueeze(0)
+            target['threshold_map'] = torch.from_numpy(target['threshold_map']).unsqueeze(0)
+            target['shrink_mask'] = torch.from_numpy(target['shrink_mask'])
+            target['threshold_mask'] = torch.from_numpy(target['threshold_mask'])
 
         return img, target
 
