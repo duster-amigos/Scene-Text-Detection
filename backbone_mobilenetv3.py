@@ -9,14 +9,23 @@ class MobileNetV3(nn.Module):
         super().__init__()
         logger.model_info(f"Initializing MobileNetV3 backbone")
 
+        def set_module_inplace_false(module):
+            for child in module.children():
+                if isinstance(child, (nn.ReLU, nn.ReLU6, nn.Hardswish)):
+                    child.inplace = False
+                else:
+                    set_module_inplace_false(child)
+
         try:
             if pretrained:
                 m = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.IMAGENET1K_V1)
             else:
                 m = mobilenet_v3_small(weights=None)
+            set_module_inplace_false(m)
         except Exception as e:
             logger.warning(f"Could not load pretrained weights: {e}")
             m = mobilenet_v3_small(weights=None)
+            set_module_inplace_false(m)
 
         self.features = m.features
         self._idxs = [2, 4, 9, len(self.features) - 1]
