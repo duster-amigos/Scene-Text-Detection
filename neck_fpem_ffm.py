@@ -113,10 +113,10 @@ class FPEM_FFM(nn.Module):
                     c4_ffm = c4
                     c5_ffm = c5
                 else:
-                    c2_ffm += c2
-                    c3_ffm += c3
-                    c4_ffm += c4
-                    c5_ffm += c5
+                    c2_ffm = c2_ffm + c2
+                    c3_ffm = c3_ffm + c3
+                    c4_ffm = c4_ffm + c4
+                    c5_ffm = c5_ffm + c5
 
             # Feature Fusion: upsample and concatenate
             c5 = F.interpolate(c5_ffm, size=c2_ffm.size()[-2:], mode='bilinear', align_corners=False)
