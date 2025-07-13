@@ -28,40 +28,41 @@ class BalanceCrossEntropyLoss(nn.Module):
         Compute the balanced cross-entropy loss.
 
         Args:
-            pred (Tensor): Predicted probabilities, shape :math:`(N, 1, H, W)` or :math:`(N, H, W)`.
-            gt (Tensor): Ground truth binary labels, shape :math:`(N, 1, H, W)` or :math:`(N, H, W)`.
-            mask (Tensor): Mask indicating positive regions, shape :math:`(N, H, W)`.
-            return_origin (bool): If True, return the original loss along with the balanced loss.
-
-        Returns:
-            Tensor: The computed loss. If return_origin is True, returns a tuple (balanced_loss, original_loss).
+            pred (Tensor): Predicted probabilities, shape (N, 1, H, W) or (N, H, W)
+            gt (Tensor): Ground truth binary labels, shape (N, 1, H, W) or (N, H, W)
+            mask (Tensor): Mask indicating positive regions, shape (N, H, W)
+            return_origin (bool): If True, return the original loss along with the balanced loss
         """
         # Ensure pred and gt have the same shape
-        if pred.dim() == 4 and gt.dim() == 4:
-            # Both are (N, 1, H, W)
+        if pred.dim() == 4:
             pred = pred.squeeze(1)  # Remove channel dimension
+        if gt.dim() == 4:
             gt = gt.squeeze(1)      # Remove channel dimension
-        elif pred.dim() == 3 and gt.dim() == 4:
-            # pred is (N, H, W), gt is (N, 1, H, W)
-            gt = gt.squeeze(1)      # Remove channel dimension
-        elif pred.dim() == 4 and gt.dim() == 3:
-            # pred is (N, 1, H, W), gt is (N, H, W)
-            pred = pred.squeeze(1)  # Remove channel dimension
         
         # Now both pred and gt should be (N, H, W)
         assert pred.shape == gt.shape, f"Shape mismatch: pred {pred.shape} vs gt {gt.shape}"
         
-        positive = (gt * mask).byte()
-        negative = ((1 - gt) * mask).byte()
+        # Ensure values are between 0 and 1
+        pred = torch.clamp(pred, min=0, max=1)
+        gt = torch.clamp(gt, min=0, max=1)
+        
+        positive = (gt * mask).bool()
+        negative = ((1 - gt) * mask).bool()
+        
         positive_count = int(positive.float().sum())
         negative_count = min(int(negative.float().sum()), int(positive_count * self.negative_ratio))
+        
         loss = nn.functional.binary_cross_entropy(pred, gt, reduction='none')
         positive_loss = loss * positive.float()
         negative_loss = loss * negative.float()
-        # negative_loss, _ = torch.topk(negative_loss.view(-1).contiguous(), negative_count)
-        negative_loss, _ = negative_loss.view(-1).topk(negative_count)
 
-        balance_loss = (positive_loss.sum() + negative_loss.sum()) / (positive_count + negative_count + self.eps)
+        # Handle case when there are no negative samples
+        if negative_count > 0:
+            negative_loss, _ = negative_loss.view(-1).topk(negative_count)
+            balance_loss = (positive_loss.sum() + negative_loss.sum()) / (positive_count + negative_count + self.eps)
+        else:
+            # If no negative samples, just use positive loss
+            balance_loss = positive_loss.sum() / (positive_count + self.eps)
 
         if return_origin:
             return balance_loss, loss
@@ -152,7 +153,8 @@ class MaskL1Loss(nn.Module):
         Returns:
             Tensor: The computed masked L1 loss.
         """
-        loss = (torch.abs(pred - gt) * mask).sum() / (mask.sum() + self.eps)
+        loss = torch.abs(pred - gt) * mask.unsqueeze(1)
+        loss = loss.sum() / (mask.sum() + self.eps)
         return loss
 
 

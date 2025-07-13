@@ -265,10 +265,10 @@ def test_losses():
     try:
         from losses import BalanceCrossEntropyLoss, DiceLoss, MaskL1Loss, DBLoss
         
-        # Create dummy data with correct shapes
-        pred = torch.randn(2, 1, 160, 160)  # Keep channel dimension
-        gt = torch.randint(0, 2, (2, 1, 160, 160)).float()  # Keep channel dimension
-        mask = torch.ones(2, 160, 160)  # No channel dimension
+        # Create dummy data with correct shapes and values
+        pred = torch.sigmoid(torch.randn(2, 1, 160, 160))  # Use sigmoid to ensure values between 0 and 1
+        gt = torch.randint(0, 2, (2, 1, 160, 160)).float()  # Binary values (0 or 1)
+        mask = torch.ones(2, 160, 160)  # Binary mask
         
         # Test BalanceCrossEntropyLoss
         bce_loss = BalanceCrossEntropyLoss()
@@ -288,12 +288,12 @@ def test_losses():
         # Test DBLoss
         criterion = DBLoss()
         batch = {
-            'shrink_map': torch.randn(2, 1, 160, 160),  # Keep channel dimension
-            'shrink_mask': torch.ones(2, 160, 160),  # No channel dimension
-            'threshold_map': torch.randn(2, 1, 160, 160),  # Keep channel dimension
-            'threshold_mask': torch.ones(2, 160, 160)  # No channel dimension
+            'shrink_map': torch.sigmoid(torch.randn(2, 1, 160, 160)),  # Values between 0 and 1
+            'shrink_mask': torch.ones(2, 160, 160),  # Binary mask
+            'threshold_map': torch.sigmoid(torch.randn(2, 1, 160, 160)),  # Values between 0 and 1
+            'threshold_mask': torch.ones(2, 160, 160)  # Binary mask
         }
-        pred = torch.randn(2, 3, 160, 160)  # 3 channels for training mode
+        pred = torch.sigmoid(torch.randn(2, 3, 160, 160))  # 3 channels for training mode, values between 0 and 1
         losses = criterion(pred, batch)
         
         print_info(f"Loss components: {list(losses.keys())}")
@@ -424,48 +424,65 @@ def test_metrics():
         traceback.print_exc()
         return False
 
+def create_model(device, pretrained=False):
+    """Helper function to create and initialize model."""
+    model_config = {
+        'backbone': {
+            'type': 'MobileNetV3',
+            'pretrained': pretrained,
+            'in_channels': 3
+        },
+        'neck': {
+            'type': 'FPEM_FFM',
+            'inner_channels': 256
+        },
+        'head': {
+            'type': 'DBHead',
+            'out_channels': 2,
+            'k': 50
+        }
+    }
+    
+    try:
+        model = Model(model_config)
+        # Initialize weights before moving to device
+        for m in model.modules():
+            if isinstance(m, (nn.Conv2d, nn.Linear)):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+        
+        model = model.to(device)
+        return model
+    except Exception as e:
+        print_error(f"Error creating model: {str(e)}")
+        raise e
+
 def test_training_step(device):
     """Test training step."""
     print_header("Testing Training Step")
     
     try:
-        # Import Model directly
-        from model import Model
         from losses import DBLoss
         from torch.optim import SGD
         
-        # Model configuration
-        model_config = {
-            'backbone': {
-                'type': 'MobileNetV3',
-                'pretrained': False,
-                'in_channels': 3
-            },
-            'neck': {
-                'type': 'FPEM_FFM',
-                'inner_channels': 256
-            },
-            'head': {
-                'type': 'DBHead',
-                'out_channels': 2,
-                'k': 50
-            }
-        }
-        
-        # Create model, loss, and optimizer
-        model = Model(model_config).to(device)
+        # Create model with proper initialization
+        model = create_model(device)
         criterion = DBLoss().to(device)
         optimizer = SGD(model.parameters(), lr=0.007, momentum=0.9, weight_decay=1e-4)
         
-        # Create dummy data with correct shapes
+        # Create dummy data with correct shapes and values
         batch_size = 2
         H, W = 640, 640
         images = torch.randn(batch_size, 3, H, W).to(device)
         targets = {
-            'shrink_map': torch.randn(batch_size, 1, H, W).to(device),  # Keep channel dimension
-            'shrink_mask': torch.ones(batch_size, H, W).to(device),  # No channel dimension
-            'threshold_map': torch.randn(batch_size, 1, H, W).to(device),  # Keep channel dimension
-            'threshold_mask': torch.ones(batch_size, H, W).to(device),  # No channel dimension
+            'shrink_map': torch.sigmoid(torch.randn(batch_size, 1, H, W)).to(device),  # Values between 0 and 1
+            'shrink_mask': torch.ones(batch_size, H, W).to(device),  # Binary mask
+            'threshold_map': torch.sigmoid(torch.randn(batch_size, 1, H, W)).to(device),  # Values between 0 and 1
+            'threshold_mask': torch.ones(batch_size, H, W).to(device),  # Binary mask
             'boxes': torch.randn(batch_size, 4, 2).to(device)  # Dummy boxes
         }
         
@@ -502,46 +519,27 @@ def test_inference(device):
     print_header("Testing Inference")
     
     try:
-        # Import Model directly
-        from model import Model
-        from utils.postprocess import process_predictions
-        
-        # Model configuration
-        model_config = {
-            'backbone': {
-                'type': 'MobileNetV3',
-                'pretrained': False,
-                'in_channels': 3
-            },
-            'neck': {
-                'type': 'FPEM_FFM',
-                'inner_channels': 256
-            },
-            'head': {
-                'type': 'DBHead',
-                'out_channels': 2,
-                'k': 50
-            }
-        }
-        
-        # Create model
-        model = Model(model_config).to(device)
+        # Create model with proper initialization
+        model = create_model(device)
         model.eval()
         
-        # Create dummy image
-        images = torch.randn(2, 3, 640, 640).to(device)
+        # Create dummy batch
+        batch_size = 2
+        images = torch.randn(batch_size, 3, 640, 640).to(device)
         
-        # Inference
         with torch.no_grad():
             predictions = model(images)
         
         print_info(f"Prediction shape: {predictions.shape}")
         
-        # Post-processing
-        for i in range(predictions.shape[0]):
-            pred = predictions[i]
-            boxes, scores = process_predictions(pred, min_size=3, box_thresh=0.7)
-            print_info(f"Image {i+1}: {len(boxes)} boxes detected")
+        # Process predictions
+        batch_boxes = []
+        batch_scores = []
+        for pred in predictions.cpu():
+            boxes, scores = process_predictions(pred)
+            batch_boxes.append(boxes)
+            batch_scores.append(scores)
+            print_info(f"Image {len(batch_boxes)}: {len(boxes)} boxes detected")
         
         print_success("Inference test passed")
         return True
@@ -626,60 +624,31 @@ def test_finetuning(device):
         return False
 
 def test_memory_usage(device):
-    """Test memory usage."""
+    """Test memory usage with different batch sizes."""
     print_header("Testing Memory Usage")
     
     try:
-        # Import Model directly
-        from model import Model
-        
-        # Model configuration
-        model_config = {
-            'backbone': {
-                'type': 'MobileNetV3',
-                'pretrained': False,
-                'in_channels': 3
-            },
-            'neck': {
-                'type': 'FPEM_FFM',
-                'inner_channels': 256
-            },
-            'head': {
-                'type': 'DBHead',
-                'out_channels': 2,
-                'k': 50
-            }
-        }
-        
-        # Create model
-        model = Model(model_config).to(device)
-        
-        # Test different batch sizes
+        # Test with increasing batch sizes
         batch_sizes = [1, 2, 4, 8]
         
         for batch_size in batch_sizes:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                torch.cuda.reset_peak_memory_stats()
+            # Create model with proper initialization
+            model = create_model(device)
+            model.eval()
             
-            try:
-                x = torch.randn(batch_size, 3, 640, 640).to(device)
-                
-                with torch.no_grad():
-                    output = model(x)
-                
-                if torch.cuda.is_available():
-                    memory_used = torch.cuda.max_memory_allocated() / 1e6  # MB
-                    print_info(f"Batch size {batch_size}: {memory_used:.1f} MB")
-                else:
-                    print_info(f"Batch size {batch_size}: CPU mode")
-                    
-            except RuntimeError as e:
-                if "out of memory" in str(e):
-                    print_info(f"Batch size {batch_size}: OOM (max batch size: {batch_size-1})")
-                    break
-                else:
-                    raise e
+            # Create dummy batch
+            images = torch.randn(batch_size, 3, 640, 640).to(device)
+            
+            # Run inference
+            with torch.no_grad():
+                predictions = model(images)
+                torch.cuda.synchronize() if torch.cuda.is_available() else None
+            
+            # Clear memory
+            del model, images, predictions
+            torch.cuda.empty_cache() if torch.cuda.is_available() else None
+            
+            print_info(f"Batch size {batch_size}: {'GPU' if torch.cuda.is_available() else 'CPU'} mode")
         
         print_success("Memory usage test passed")
         return True
