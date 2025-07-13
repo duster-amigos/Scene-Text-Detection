@@ -7,11 +7,11 @@ import argparse
 import time
 from tqdm import tqdm
 import numpy as np
-from model import Model
-from dataset import ICDAR2015Dataset, get_transforms
-from losses import DBLoss
+from src.models.model import Model
+from src.data.icdar2015_dataset import ICDAR2015Dataset, get_transforms
+from src.models.losses import DBLoss
 import json
-from utils import logger, print_device_info, print_model_summary, print_config_summary, print_training_progress, print_dataset_info, print_checkpoint_info
+from src.utils.logger import logger, print_device_info, print_model_summary, print_config_summary, print_training_progress, print_dataset_info, print_checkpoint_info
 
 torch.autograd.set_detect_anomaly(True)
 

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from PIL import Image
 import argparse
 import time
-from model import Model
+from src.models.model import Model
 import json
 import torchvision.transforms as transforms
 

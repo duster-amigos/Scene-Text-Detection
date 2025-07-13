@@ -7,9 +7,10 @@ import argparse
 import time
 from tqdm import tqdm
 import json
-from model import Model
-from dataset import ICDAR2015Dataset, get_transforms
-from inference import TextDetector
+from src.models.model import Model
+from src.data.icdar2015_dataset import ICDAR2015Dataset, get_transforms
+from src.utils.logger import logger
+from src.inference.text_detector import TextDetector
 
 class TextDetectionEvaluator:
     def __init__(self, model_path, config_path, device=None):
