@@ -13,6 +13,8 @@ from losses import DBLoss
 import json
 from utils import logger, print_device_info, print_model_summary, print_config_summary, print_training_progress, print_dataset_info, print_checkpoint_info
 
+torch.autograd.set_detect_anomaly(True)
+
 class Trainer:
     def __init__(self, config):
         logger.header("Initializing DBNet Trainer")
