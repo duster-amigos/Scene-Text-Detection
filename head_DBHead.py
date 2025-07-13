@@ -24,10 +24,10 @@ class DBHead(nn.Module):
             self.binarize = nn.Sequential(
                 nn.Conv2d(in_channels, inc4, 3, padding=1),
                 nn.BatchNorm2d(inc4),
-                nn.ReLU(inplace=True),
+                nn.ReLU(inplace=False),
                 nn.ConvTranspose2d(inc4, inc4, 2, 2),
                 nn.BatchNorm2d(inc4),
-                nn.ReLU(inplace=True),
+                nn.ReLU(inplace=False),
                 nn.ConvTranspose2d(inc4, 1, 2, 2),
                 nn.Sigmoid())
             self.binarize.apply(self.weights_init)
@@ -101,10 +101,10 @@ class DBHead(nn.Module):
             return nn.Sequential(
                 nn.Conv2d(in_channels, ic4, 3, padding=1, bias=bias),
                 nn.BatchNorm2d(ic4),
-                nn.ReLU(inplace=True),
+                nn.ReLU(inplace=False),
                 self._init_upsample(ic4, ic4, smooth=smooth, bias=bias),
                 nn.BatchNorm2d(ic4),
-                nn.ReLU(inplace=True),
+                nn.ReLU(inplace=False),
                 self._init_upsample(ic4, 1, smooth=smooth, bias=bias),
                 nn.Sigmoid())
         except Exception as e:

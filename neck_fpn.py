@@ -7,7 +7,7 @@ class ConvBnRelu(nn.Module):
     """
     A module that combines a 2D convolution, batch normalization, and ReLU activation.
     """
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros', inplace=True):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros', inplace=False):
         """
         Initialize the ConvBnRelu module.
 

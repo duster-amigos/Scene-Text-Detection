@@ -8,7 +8,7 @@ class ConvBnRelu(nn.Module):
     """
     A module that combines a 2D convolution, batch normalization, and ReLU activation.
     """
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros', inplace=True):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros', inplace=False):
         """
         Initialize the ConvBnRelu module.
 
@@ -22,7 +22,7 @@ class ConvBnRelu(nn.Module):
             groups (int, optional): Number of blocked connections from input channels to output channels. Default: 1
             bias (bool, optional): If True, adds a learnable bias to the output. Default: True
             padding_mode (str, optional): Padding mode. Default: 'zeros'
-            inplace (bool, optional): If True, performs the ReLU operation in-place. Default: True
+            inplace (bool, optional): If True, performs the ReLU operation in-place. Default: False
         """
         super().__init__()
         try:
@@ -71,7 +71,7 @@ class FPEM_FFM(nn.Module):
         try:
             logger.model_info(f"Initializing FPEM_FFM")
             self.conv_out = inner_channels
-            inplace = True
+            inplace = False
             # Reduce layers to adjust channel dimensions
             self.reduce_conv_c2 = ConvBnRelu(in_channels[0], inner_channels, kernel_size=1, inplace=inplace)
             self.reduce_conv_c3 = ConvBnRelu(in_channels[1], inner_channels, kernel_size=1, inplace=inplace)
