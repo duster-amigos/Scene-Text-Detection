@@ -33,7 +33,7 @@ def build_neck(neck_name, **kwargs):
     return neck
 
 def build_head(head_name, **kwargs):
-    support_head = ['ConvHead', 'DBHead']
+    support_head = ['DBHead']
     assert head_name in support_head, f'all support head is {support_head}'
     head = eval(head_name)(**kwargs)
     return head

@@ -24,10 +24,15 @@ class ConvBnRelu(nn.Module):
             inplace (bool, optional): If True, performs the ReLU operation in-place. Default: True
         """
         super().__init__()
-        self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation,
-                              groups=groups, bias=bias, padding_mode=padding_mode)
-        self.bn = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=inplace)
+        try:
+            self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation,
+                                  groups=groups, bias=bias, padding_mode=padding_mode)
+            self.bn = nn.BatchNorm2d(out_channels)
+            self.relu = nn.ReLU(inplace=inplace)
+            print(f"ConvBnRelu initialized: in_channels={in_channels}, out_channels={out_channels}, kernel_size={kernel_size}")
+        except Exception as e:
+            print(f"Error initializing ConvBnRelu: {e}")
+            raise
 
     def forward(self, x):
         """
@@ -39,10 +44,14 @@ class ConvBnRelu(nn.Module):
         Returns:
             Tensor: Output tensor after convolution, batch normalization, and ReLU activation.
         """
-        x = self.conv(x)
-        x = self.bn(x)
-        x = self.relu(x)
-        return x
+        try:
+            x = self.conv(x)
+            x = self.bn(x)
+            x = self.relu(x)
+            return x
+        except Exception as e:
+            print(f"Error in ConvBnRelu forward pass: {e}")
+            raise
 
 class FPEM_FFM(nn.Module):
     """
@@ -59,17 +68,24 @@ class FPEM_FFM(nn.Module):
             **kwargs: Additional keyword arguments.
         """
         super().__init__()
-        self.conv_out = inner_channels
-        inplace = True
-        # Reduce layers to adjust channel dimensions
-        self.reduce_conv_c2 = ConvBnRelu(in_channels[0], inner_channels, kernel_size=1, inplace=inplace)
-        self.reduce_conv_c3 = ConvBnRelu(in_channels[1], inner_channels, kernel_size=1, inplace=inplace)
-        self.reduce_conv_c4 = ConvBnRelu(in_channels[2], inner_channels, kernel_size=1, inplace=inplace)
-        self.reduce_conv_c5 = ConvBnRelu(in_channels[3], inner_channels, kernel_size=1, inplace=inplace)
-        self.fpems = nn.ModuleList()
-        for i in range(fpem_repeat):
-            self.fpems.append(FPEM(self.conv_out))
-        self.out_channels = self.conv_out * 4
+        try:
+            print(f"Initializing FPEM_FFM: in_channels={in_channels}, inner_channels={inner_channels}, fpem_repeat={fpem_repeat}")
+            self.conv_out = inner_channels
+            inplace = True
+            # Reduce layers to adjust channel dimensions
+            self.reduce_conv_c2 = ConvBnRelu(in_channels[0], inner_channels, kernel_size=1, inplace=inplace)
+            self.reduce_conv_c3 = ConvBnRelu(in_channels[1], inner_channels, kernel_size=1, inplace=inplace)
+            self.reduce_conv_c4 = ConvBnRelu(in_channels[2], inner_channels, kernel_size=1, inplace=inplace)
+            self.reduce_conv_c5 = ConvBnRelu(in_channels[3], inner_channels, kernel_size=1, inplace=inplace)
+            self.fpems = nn.ModuleList()
+            for i in range(fpem_repeat):
+                self.fpems.append(FPEM(self.conv_out))
+                print(f"Added FPEM module {i+1}/{fpem_repeat}")
+            self.out_channels = self.conv_out * 4
+            print(f"FPEM_FFM initialized with output channels: {self.out_channels}")
+        except Exception as e:
+            print(f"Error initializing FPEM_FFM: {e}")
+            raise
 
     def forward(self, x):
         """
@@ -81,33 +97,42 @@ class FPEM_FFM(nn.Module):
         Returns:
             Tensor: The fused feature map.
         """
-        c2, c3, c4, c5 = x
-        # Reduce channel dimensions
-        c2 = self.reduce_conv_c2(c2)
-        c3 = self.reduce_conv_c3(c3)
-        c4 = self.reduce_conv_c4(c4)
-        c5 = self.reduce_conv_c5(c5)
+        try:
+            print(f"FPEM_FFM forward pass - input shapes: {[t.shape for t in x]}")
+            c2, c3, c4, c5 = x
+            # Reduce channel dimensions
+            c2 = self.reduce_conv_c2(c2)
+            c3 = self.reduce_conv_c3(c3)
+            c4 = self.reduce_conv_c4(c4)
+            c5 = self.reduce_conv_c5(c5)
+            print(f"Channel reduction completed - shapes: c2={c2.shape}, c3={c3.shape}, c4={c4.shape}, c5={c5.shape}")
 
-        # Apply FPEM modules and accumulate features
-        for i, fpem in enumerate(self.fpems):
-            c2, c3, c4, c5 = fpem(c2, c3, c4, c5)
-            if i == 0:
-                c2_ffm = c2
-                c3_ffm = c3
-                c4_ffm = c4
-                c5_ffm = c5
-            else:
-                c2_ffm += c2
-                c3_ffm += c3
-                c4_ffm += c4
-                c5_ffm += c5
+            # Apply FPEM modules and accumulate features
+            for i, fpem in enumerate(self.fpems):
+                print(f"Applying FPEM module {i+1}/{len(self.fpems)}")
+                c2, c3, c4, c5 = fpem(c2, c3, c4, c5)
+                if i == 0:
+                    c2_ffm = c2
+                    c3_ffm = c3
+                    c4_ffm = c4
+                    c5_ffm = c5
+                else:
+                    c2_ffm += c2
+                    c3_ffm += c3
+                    c4_ffm += c4
+                    c5_ffm += c5
 
-        # Feature Fusion: upsample and concatenate
-        c5 = F.interpolate(c5_ffm, size=c2_ffm.size()[-2:], mode='bilinear', align_corners=False)
-        c4 = F.interpolate(c4_ffm, size=c2_ffm.size()[-2:], mode='bilinear', align_corners=False)
-        c3 = F.interpolate(c3_ffm, size=c2_ffm.size()[-2:], mode='bilinear', align_corners=False)
-        Fy = torch.cat([c2_ffm, c3, c4, c5], dim=1)
-        return Fy
+            # Feature Fusion: upsample and concatenate
+            print("Performing feature fusion with upsampling")
+            c5 = F.interpolate(c5_ffm, size=c2_ffm.size()[-2:], mode='bilinear', align_corners=False)
+            c4 = F.interpolate(c4_ffm, size=c2_ffm.size()[-2:], mode='bilinear', align_corners=False)
+            c3 = F.interpolate(c3_ffm, size=c2_ffm.size()[-2:], mode='bilinear', align_corners=False)
+            Fy = torch.cat([c2_ffm, c3, c4, c5], dim=1)
+            print(f"FPEM_FFM forward pass completed - output shape: {Fy.shape}")
+            return Fy
+        except Exception as e:
+            print(f"Error in FPEM_FFM forward pass: {e}")
+            raise
 
 class FPEM(nn.Module):
     """
@@ -121,12 +146,18 @@ class FPEM(nn.Module):
             in_channels (int, optional): Number of input channels. Defaults to 128.
         """
         super().__init__()
-        self.up_add1 = SeparableConv2d(in_channels, in_channels, 1)
-        self.up_add2 = SeparableConv2d(in_channels, in_channels, 1)
-        self.up_add3 = SeparableConv2d(in_channels, in_channels, 1)
-        self.down_add1 = SeparableConv2d(in_channels, in_channels, 2)
-        self.down_add2 = SeparableConv2d(in_channels, in_channels, 2)
-        self.down_add3 = SeparableConv2d(in_channels, in_channels, 2)
+        try:
+            print(f"Initializing FPEM module with in_channels={in_channels}")
+            self.up_add1 = SeparableConv2d(in_channels, in_channels, 1)
+            self.up_add2 = SeparableConv2d(in_channels, in_channels, 1)
+            self.up_add3 = SeparableConv2d(in_channels, in_channels, 1)
+            self.down_add1 = SeparableConv2d(in_channels, in_channels, 2)
+            self.down_add2 = SeparableConv2d(in_channels, in_channels, 2)
+            self.down_add3 = SeparableConv2d(in_channels, in_channels, 2)
+            print("FPEM module initialized successfully")
+        except Exception as e:
+            print(f"Error initializing FPEM module: {e}")
+            raise
 
     def forward(self, c2, c3, c4, c5):
         """
@@ -141,16 +172,22 @@ class FPEM(nn.Module):
         Returns:
             tuple: Enhanced feature maps (c2, c3, c4, c5).
         """
-        # Up stage: top-down path
-        c4 = self.up_add1(self._upsample_add(c5, c4))
-        c3 = self.up_add2(self._upsample_add(c4, c3))
-        c2 = self.up_add3(self._upsample_add(c3, c2))
+        try:
+            print(f"FPEM forward pass - input shapes: c2={c2.shape}, c3={c3.shape}, c4={c4.shape}, c5={c5.shape}")
+            # Up stage: top-down path
+            c4 = self.up_add1(self._upsample_add(c5, c4))
+            c3 = self.up_add2(self._upsample_add(c4, c3))
+            c2 = self.up_add3(self._upsample_add(c3, c2))
 
-        # Down stage: bottom-up path
-        c3 = self.down_add1(self._upsample_add(c3, c2))
-        c4 = self.down_add2(self._upsample_add(c4, c3))
-        c5 = self.down_add3(self._upsample_add(c5, c4))
-        return c2, c3, c4, c5
+            # Down stage: bottom-up path
+            c3 = self.down_add1(self._upsample_add(c3, c2))
+            c4 = self.down_add2(self._upsample_add(c4, c3))
+            c5 = self.down_add3(self._upsample_add(c5, c4))
+            print(f"FPEM forward pass completed - output shapes: c2={c2.shape}, c3={c3.shape}, c4={c4.shape}, c5={c5.shape}")
+            return c2, c3, c4, c5
+        except Exception as e:
+            print(f"Error in FPEM forward pass: {e}")
+            raise
 
     def _upsample_add(self, x, y):
         """
@@ -163,7 +200,11 @@ class FPEM(nn.Module):
         Returns:
             Tensor: The sum of upsampled x and y.
         """
-        return F.interpolate(x, size=y.size()[2:], mode='bilinear', align_corners=False) + y
+        try:
+            return F.interpolate(x, size=y.size()[2:], mode='bilinear', align_corners=False) + y
+        except Exception as e:
+            print(f"Error in _upsample_add: {e}")
+            raise
 
 class SeparableConv2d(nn.Module):
     """
@@ -179,12 +220,17 @@ class SeparableConv2d(nn.Module):
             stride (int, optional): Stride of the depthwise convolution. Defaults to 1.
         """
         super(SeparableConv2d, self).__init__()
-
-        self.depthwise_conv = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3, padding=1,
-                                        stride=stride, groups=in_channels)
-        self.pointwise_conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
-        self.bn = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU()
+        try:
+            print(f"Initializing SeparableConv2d: in_channels={in_channels}, out_channels={out_channels}, stride={stride}")
+            self.depthwise_conv = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3, padding=1,
+                                            stride=stride, groups=in_channels)
+            self.pointwise_conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
+            self.bn = nn.BatchNorm2d(out_channels)
+            self.relu = nn.ReLU()
+            print("SeparableConv2d initialized successfully")
+        except Exception as e:
+            print(f"Error initializing SeparableConv2d: {e}")
+            raise
 
     def forward(self, x):
         """
@@ -196,8 +242,12 @@ class SeparableConv2d(nn.Module):
         Returns:
             Tensor: Output tensor after separable convolution, batch normalization, and ReLU activation.
         """
-        x = self.depthwise_conv(x)
-        x = self.pointwise_conv(x)
-        x = self.bn(x)
-        x = self.relu(x)
-        return x
+        try:
+            x = self.depthwise_conv(x)
+            x = self.pointwise_conv(x)
+            x = self.bn(x)
+            x = self.relu(x)
+            return x
+        except Exception as e:
+            print(f"Error in SeparableConv2d forward pass: {e}")
+            raise
