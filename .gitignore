@@ -1,0 +1,164 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyTorch
+*.pth
+*.pt
+*.pkl
+*.pth.tar
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# PyTorch Lightning
+lightning_logs/
+
+# Data files
+data/
+datasets/
+*.jpg
+*.jpeg
+*.png
+*.tiff
+*.bmp
+*.gif
+*.ico
+*.mp4
+*.avi
+*.mov
+*.wmv
+
+# Model checkpoints and outputs
+checkpoints/
+models/
+outputs/
+results/
+logs/
+runs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Configuration files with sensitive data
+config_local.json
+.env.local
+secrets.json
+
+# Profiling and debugging
+*.prof
+*.pstats
+debug/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Documentation builds
+docs/_build/
+docs/build/
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Large files
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Specific to this project
+Scene-Text-Detection/
+icdar2015/
+train_data/
+test_data/
+val_data/ 

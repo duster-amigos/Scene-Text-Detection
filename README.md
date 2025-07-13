@@ -29,28 +29,38 @@ cd DBNET
 
 2. Install dependencies:
 ```bash
-pip install -r requirements.txt
+pip install -r configs/requirements.txt
 ```
 
 ## Project Structure
 
 ```
 DBNET/
-├── backbone_mobilenetv3.py  # MobileNetV3 backbone implementation
-├── neck_fpem_ffm.py         # FPEM-FFM neck architecture
-├── neck_fpn.py              # Alternative FPN neck module
-├── head_DBHead.py           # DBHead with differentiable binarization
-├── losses.py                # Loss function implementations
-├── model.py                 # Main model architecture
-├── build.py                 # Model building utilities
-├── dataset.py               # ICDAR 2015 dataset loader
-├── train.py                 # Training script with anomaly detection
-├── inference.py             # Inference and visualization script
-├── test.py                  # Evaluation and metrics script
-├── utils.py                 # Utility functions and logging
-├── config.json              # Configuration parameters
-├── requirements.txt         # Python dependencies
-└── README.md               # Documentation
+├── src/
+│   ├── models/
+│   │   ├── backbones/
+│   │   │   └── mobilenetv3_small.py
+│   │   ├── necks/
+│   │   │   ├── fpem_ffm.py
+│   │   │   └── fpn.py
+│   │   ├── heads/
+│   │   │   └── db_head.py
+│   │   ├── losses.py
+│   │   ├── model.py
+│   │   └── build.py
+│   ├── utils/
+│   │   └── logger.py
+│   └── data/
+│       └── icdar2015_dataset.py
+├── scripts/
+│   ├── train.py
+│   ├── inference.py
+│   └── test.py
+├── configs/
+│   ├── config.json
+│   └── requirements.txt
+├── LICENSE
+└── README.md
 ```
 
 ## Data Preparation
@@ -63,13 +73,7 @@ Organize your dataset in the following structure:
 data/icdar2015/
 ├── train/
 │   ├── images/
-│   │   ├── img_1.jpg
-│   │   ├── img_2.jpg
-│   │   └── ...
 │   └── labels/
-│       ├── img_1.txt
-│       ├── img_2.txt
-│       └── ...
 ├── val/
 │   ├── images/
 │   └── labels/
@@ -84,12 +88,11 @@ Each annotation file should contain one text region per line in ICDAR 2015 forma
 ```
 x1,y1,x2,y2,x3,y3,x4,y4,text
 ```
-
 Where coordinates represent the four corners of the text bounding box in clockwise order.
 
 ## Configuration
 
-The `config.json` file contains all model and training parameters:
+The `configs/config.json` file contains all model and training parameters:
 
 **Model Configuration:**
 - Backbone type and pretraining settings
@@ -111,11 +114,11 @@ The `config.json` file contains all model and training parameters:
 ### Training
 
 1. Prepare your dataset in ICDAR 2015 format
-2. Update data paths in `config.json`
+2. Update data paths in `configs/config.json`
 3. Start training:
 
 ```bash
-python train.py --config config.json
+python scripts/train.py --config configs/config.json
 ```
 
 **Training Features:**
@@ -130,9 +133,9 @@ python train.py --config config.json
 Detect text in individual images:
 
 ```bash
-python inference.py \
+python scripts/inference.py \
     --model checkpoints/dbnet_checkpoint_best.pth \
-    --config config.json \
+    --config configs/config.json \
     --image path/to/image.jpg \
     --output result.jpg
 ```
@@ -142,9 +145,9 @@ python inference.py \
 Evaluate model performance on test datasets:
 
 ```bash
-python test.py \
+python scripts/test.py \
     --model checkpoints/dbnet_checkpoint_best.pth \
-    --config config.json \
+    --config configs/config.json \
     --test_images data/icdar2015/test/images \
     --test_labels data/icdar2015/test/labels \
     --iou_threshold 0.5
@@ -153,14 +156,12 @@ python test.py \
 ## Model Architecture Details
 
 ### Backbone: MobileNetV3-Small
-
 - Efficient depthwise separable convolutions
 - Squeeze-and-Excitation blocks
 - Outputs 4 feature maps: [24, 40, 96, 576] channels
 - Pre-trained on ImageNet for better convergence
 
 ### Neck: FPEM-FFM
-
 **Feature Pyramid Enhancement Module (FPEM):**
 - Top-down and bottom-up feature enhancement
 - Separable convolutions for efficiency
@@ -172,7 +173,6 @@ python test.py \
 - Channel concatenation for final representation
 
 ### Head: DBHead
-
 **Binarization Module:**
 - Convolutional layers with batch normalization
 - Transposed convolutions for upsampling
@@ -240,7 +240,7 @@ Where α = 1.0 and β = 10.0
 
 The model automatically detects and utilizes available GPUs. To force CPU usage:
 ```bash
-CUDA_VISIBLE_DEVICES="" python train.py --config config.json
+CUDA_VISIBLE_DEVICES="" python scripts/train.py --config configs/config.json
 ```
 
 ## Technical Implementation Notes
@@ -253,10 +253,13 @@ The implementation includes comprehensive fixes for PyTorch autograd compatibili
 - Proper tensor slicing in loss functions
 
 ### Memory Optimization
-
 - Efficient data loading with proper worker configuration
 - Gradient checkpointing for large models
 - Optimized batch processing
+
+## License
+
+This project is licensed under the MIT License. See the LICENSE file for details.
 
 ## Citation
 
