@@ -11,25 +11,13 @@ This implementation follows the architecture described in "Real-time Scene Text 
 - **Neck**: FPEM-FFM (Feature Pyramid Enhancement Module with Feature Fusion Module)
 - **Head**: DBHead with differentiable binarization
 
-## Key Features
-
-- Modern PyTorch 2.0+ implementation with full GPU/CPU support
-- Comprehensive training pipeline with checkpoint management
-- ICDAR 2015 dataset support with proper ground truth generation
-- Advanced loss function implementation (Balanced Cross-Entropy, Dice, Masked L1)
-- Professional logging system with hierarchical progress tracking
-- Robust error handling and data validation
-- Evaluation metrics including Precision, Recall, and F1-Score
-- Inference pipeline with visualization capabilities
-- Fine-tuning support for custom datasets
-
 ## Installation
 
 ### Prerequisites
 
 - Python 3.8+
 - PyTorch 2.0+
-- CUDA 11.0+ (for GPU acceleration)
+- CUDA 11.0+
 
 ### Setup
 
@@ -222,15 +210,6 @@ L = α * L_shrink + β * L_threshold + L_binary
 ```
 Where α = 1.0 and β = 10.0
 
-## Performance Metrics
-
-Expected performance on ICDAR 2015 test set:
-- Precision: 85-90%
-- Recall: 80-85%
-- F1-Score: 82-87%
-
-Performance may vary based on training data quality and hyperparameter optimization.
-
 ## Training Guidelines
 
 ### Hyperparameter Recommendations
@@ -256,29 +235,6 @@ Performance may vary based on training data quality and hyperparameter optimizat
 3. **Checkpointing**: Save best model based on validation performance
 4. **Regularization**: Weight decay of 0.0001 helps prevent overfitting
 5. **Image Size**: 640x640 provides good balance of speed and accuracy
-
-## Troubleshooting
-
-### Common Issues and Solutions
-
-**CUDA Out of Memory:**
-- Reduce batch size in config.json
-- Decrease image size if necessary
-- Use gradient accumulation for larger effective batch sizes
-
-**Import Errors:**
-- Verify all dependencies are installed: `pip install -r requirements.txt`
-- Check PyTorch version compatibility
-
-**Data Loading Issues:**
-- Validate data paths in config.json
-- Ensure annotation format matches ICDAR 2015 specification
-- Check file permissions and encoding
-
-**Training Convergence:**
-- Monitor learning rate and adjust if necessary
-- Verify data augmentation is working correctly
-- Check for class imbalance in training data
 
 ### GPU Configuration
 
@@ -317,15 +273,3 @@ If you use this implementation in your research, please cite the original paper:
   year={2020}
 }
 ```
-
-## License
-
-This implementation is provided for research and educational purposes. Please refer to the original paper and repository for licensing information.
-
-## Contributing
-
-Contributions are welcome and encouraged. Please ensure code quality and maintain consistency with the existing codebase. For major changes, please open an issue first to discuss the proposed modifications.
-
-## Acknowledgments
-
-This implementation is based on the original DBNet paper by Liao et al. Special thanks to the PyTorch community for providing excellent tools and documentation. 
