@@ -76,12 +76,12 @@ class ICDAR2015Dataset(Dataset):
     
     def __getitem__(self, idx):
         try:
-            print(f"Loading sample {idx}/{len(self.image_files)}")
+            logger.data_info(f"Loading sample {idx}/{len(self.image_files)}")
             
             # Load image
             img_name = self.image_files[idx]
             img_path = os.path.join(self.data_dir, img_name)
-            print(f"Loading image: {img_path}")
+            logger.data_info(f"Loading image: {img_path}")
             
             image = cv2.imread(img_path)
             if image is None:
@@ -89,22 +89,20 @@ class ICDAR2015Dataset(Dataset):
             
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             h, w = image.shape[:2]
-            print(f"Image loaded successfully: shape={image.shape}, H={h}, W={w}")
+            logger.data_info(f"Image loaded successfully: shape={image.shape}, H={h}, W={w}")
             
             # Load ground truth
             gt_name = img_name.replace('.jpg', '.txt').replace('.png', '.txt').replace('.jpeg', '.txt')
             gt_path = os.path.join(self.gt_dir, gt_name)
-            print(f"Loading ground truth: {gt_path}")
+            logger.data_info(f"Loading ground truth: {gt_path}")
             
             polygons = []
             if os.path.exists(gt_path):
                 try:
                     with open(gt_path, 'r', encoding='utf-8-sig') as f:
                         all_lines = [l for l in f if l.strip()]
-                        print(f"    → This file has {len(all_lines)} annotations")
                         for line_num, line in enumerate(all_lines):
                             line = line.strip()
-                            print(f"Line: {line}")
                             if line:
                                 # ICDAR 2015 format: x1,y1,x2,y2,x3,y3,x4,y4,text
                                 parts = line.split(',')
@@ -112,29 +110,28 @@ class ICDAR2015Dataset(Dataset):
                                     coords = [float(x) for x in parts[:8]]
                                     polygon = np.array(coords).reshape(-1, 2)
                                     polygons.append(polygon)
-                                    print(f"Polygon: {polygon}")
-                                    print(f"Loaded polygon {len(polygons)} from line {line_num + 1}")
+                                    logger.data_info(f"Loaded polygon {len(polygons)} from line {line_num + 1}")
                                 else:
-                                    print(f"Warning: Invalid line format at line {line_num + 1}: {line}")
+                                    logger.warning(f"Invalid line format at line {line_num + 1}: {line}")
                 except Exception as e:
-                    print(f"Error reading annotation file {gt_path}: {e}")
+                    logger.error(f"Error reading annotation file {gt_path}: {e}")
             else:
-                print(f"Warning: Ground truth file not found: {gt_path}")
+                logger.warning(f"Ground truth file not found: {gt_path}")
             
-            print(f"Loaded {len(polygons)} text regions")
+            logger.data_info(f"Loaded {len(polygons)} text regions")
             
             # Apply transforms
             if self.transform:
-                print("Applying transforms to image")
+                logger.data_info("Applying transforms to image")
                 image = self.transform(image)
-                print(f"Image after transforms: shape={image.shape}")
+                logger.data_info(f"Image after transforms: shape={image.shape}")
             
             # Generate ground truth maps
-            print("Generating ground truth maps")
+            logger.data_info("Generating ground truth maps")
             shrink_map, shrink_mask, threshold_map, threshold_mask = self.generate_gt_maps(
                 h, w, polygons
             )
-            print(f"GT maps generated: shrink_map={shrink_map.shape}, threshold_map={threshold_map.shape}")
+            logger.data_info(f"GT maps generated: shrink_map={shrink_map.shape}, threshold_map={threshold_map.shape}")
             
             result = {
                 'image': image,
@@ -145,13 +142,13 @@ class ICDAR2015Dataset(Dataset):
                 'filename': img_name
             }
             
-            print(f"Sample {idx} loaded successfully")
+            logger.data_info(f"Sample {idx} loaded successfully")
             return result
             
         except Exception as e:
-            print(f"Error loading sample {idx}: {e}")
+            logger.error(f"Error loading sample {idx}: {e}")
             # Return a dummy sample
-            print("Returning dummy sample due to error")
+            logger.warning("Returning dummy sample due to error")
             dummy_image = torch.zeros(3, 640, 640)
             dummy_map = torch.zeros(1, 640, 640)
             dummy_mask = torch.zeros(640, 640)
@@ -169,14 +166,14 @@ class ICDAR2015Dataset(Dataset):
         Generate ground truth maps for training
         """
         try:
-            print(f"Generating GT maps for image size: {h}x{w} with {len(polygons)} polygons")
+            logger.data_info(f"Generating GT maps for image size: {h}x{w} with {len(polygons)} polygons")
             shrink_map = np.zeros((h, w), dtype=np.float32)
             shrink_mask = np.zeros((h, w), dtype=np.float32)
             threshold_map = np.zeros((h, w), dtype=np.float32)
             threshold_mask = np.zeros((h, w), dtype=np.float32)
             
             for i, polygon in enumerate(polygons):
-                print(f"Processing polygon {i+1}/{len(polygons)}")
+                logger.data_info(f"Processing polygon {i+1}/{len(polygons)}")
                 
                 # Create shrink polygon
                 shrink_polygon = self.shrink_polygon(polygon, self.shrink_ratio)
@@ -196,11 +193,11 @@ class ICDAR2015Dataset(Dataset):
             threshold_map = torch.from_numpy(threshold_map).unsqueeze(0)
             threshold_mask = torch.from_numpy(threshold_mask)
             
-            print(f"GT maps created successfully: shrink_map={shrink_map.shape}, threshold_map={threshold_map.shape}")
+            logger.data_info(f"GT maps created successfully: shrink_map={shrink_map.shape}, threshold_map={threshold_map.shape}")
             return shrink_map, shrink_mask, threshold_map, threshold_mask
             
         except Exception as e:
-            print(f"Error generating GT maps: {e}")
+            logger.error(f"Error generating GT maps: {e}")
             # Return empty maps
             shrink_map = torch.zeros(1, h, w)
             shrink_mask = torch.zeros(h, w)
@@ -217,7 +214,7 @@ class ICDAR2015Dataset(Dataset):
             shrunk_polygon = (polygon - center) * ratio + center
             return shrunk_polygon
         except Exception as e:
-            print(f"Error shrinking polygon: {e}")
+            logger.error(f"Error shrinking polygon: {e}")
             return polygon
 
 def get_transforms(image_size=640, is_training=True):
@@ -225,7 +222,7 @@ def get_transforms(image_size=640, is_training=True):
     Get transforms for data augmentation
     """
     try:
-        print(f"Creating transforms: image_size={image_size}, is_training={is_training}")
+        logger.data_info(f"Creating transforms: image_size={image_size}, is_training={is_training}")
         if is_training:
             transform = transforms.Compose([
                 transforms.ToPILImage(),
@@ -235,7 +232,7 @@ def get_transforms(image_size=640, is_training=True):
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
             ])
-            print("Training transforms created with data augmentation")
+            logger.data_info("Training transforms created with data augmentation")
         else:
             transform = transforms.Compose([
                 transforms.ToPILImage(),
@@ -243,9 +240,9 @@ def get_transforms(image_size=640, is_training=True):
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
             ])
-            print("Validation transforms created without augmentation")
+            logger.data_info("Validation transforms created without augmentation")
         
         return transform
     except Exception as e:
-        print(f"Error creating transforms: {e}")
+        logger.error(f"Error creating transforms: {e}")
         raise 

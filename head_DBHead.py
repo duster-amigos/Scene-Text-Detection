@@ -1,6 +1,7 @@
 # head_DBHead.py
 import torch
 from torch import nn
+from utils import logger
 
 class DBHead(nn.Module):
     """DBHead module for differentiable binarization in text detection tasks.
@@ -16,11 +17,11 @@ class DBHead(nn.Module):
         """
         super().__init__()
         try:
-            print(f"Initializing DBHead: in_channels={in_channels}, out_channels={out_channels}, k={k}")
+            logger.model_info(f"Initializing DBHead: in_channels={in_channels}, out_channels={out_channels}, k={k}")
             self.k = k
             # Binarization module: produces shrink maps
             inc4 = in_channels // 4
-            print(f"Creating binarization module with intermediate channels: {inc4}")
+            logger.model_info(f"Creating binarization module with intermediate channels: {inc4}")
             self.binarize = nn.Sequential(
                 nn.Conv2d(in_channels, inc4, 3, padding=1),
                 nn.BatchNorm2d(inc4),
@@ -31,16 +32,16 @@ class DBHead(nn.Module):
                 nn.ConvTranspose2d(inc4, 1, 2, 2),
                 nn.Sigmoid())
             self.binarize.apply(self.weights_init)
-            print("Binarization module created and initialized")
+            logger.model_info("Binarization module created and initialized")
 
             # Threshold module: produces threshold maps
-            print("Creating threshold module")
+            logger.model_info("Creating threshold module")
             self.thresh = self._init_thresh(in_channels)
             self.thresh.apply(self.weights_init)
-            print("Threshold module created and initialized")
-            print("DBHead initialization completed successfully")
+            logger.model_info("Threshold module created and initialized")
+            logger.model_info("DBHead initialization completed successfully")
         except Exception as e:
-            print(f"Error initializing DBHead: {e}")
+            logger.error(f"Error initializing DBHead: {e}")
             raise
 
     def forward(self, x):
@@ -53,24 +54,24 @@ class DBHead(nn.Module):
             Tensor: Concatenated maps (shrink and threshold maps; binary maps added during training).
         """
         try:
-            print(f"DBHead forward pass - input shape: {x.shape}")
+            logger.model_info(f"DBHead forward pass - input shape: {x.shape}")
             shrink_maps = self.binarize(x)
             threshold_maps = self.thresh(x)
-            print(f"Generated shrink maps shape: {shrink_maps.shape}")
-            print(f"Generated threshold maps shape: {threshold_maps.shape}")
+            logger.model_info(f"Generated shrink maps shape: {shrink_maps.shape}")
+            logger.model_info(f"Generated threshold maps shape: {threshold_maps.shape}")
             
             if self.training:
-                print("Training mode: generating binary maps")
+                logger.model_info("Training mode: generating binary maps")
                 binary_maps = self.step_function(shrink_maps, threshold_maps)
                 y = torch.cat((shrink_maps, threshold_maps, binary_maps), dim=1)
-                print(f"Training output shape: {y.shape}")
+                logger.model_info(f"Training output shape: {y.shape}")
             else:
-                print("Inference mode: no binary maps")
+                logger.model_info("Inference mode: no binary maps")
                 y = torch.cat((shrink_maps, threshold_maps), dim=1)
-                print(f"Inference output shape: {y.shape}")
+                logger.model_info(f"Inference output shape: {y.shape}")
             return y
         except Exception as e:
-            print(f"Error in DBHead forward pass: {e}")
+            logger.error(f"Error in DBHead forward pass: {e}")
             raise
 
     def weights_init(self, m):
@@ -83,13 +84,13 @@ class DBHead(nn.Module):
             classname = m.__class__.__name__
             if classname.find('Conv') != -1:
                 nn.init.kaiming_normal_(m.weight.data)
-                print(f"Initialized {classname} with Kaiming normal")
+                logger.model_info(f"Initialized {classname} with Kaiming normal")
             elif classname.find('BatchNorm') != -1:
                 m.weight.data.fill_(1.)
                 m.bias.data.fill_(1e-4)
-                print(f"Initialized {classname} with default values")
+                logger.model_info(f"Initialized {classname} with default values")
         except Exception as e:
-            print(f"Error in weight initialization: {e}")
+            logger.error(f"Error in weight initialization: {e}")
 
     def _init_thresh(self, inner_channels, serial=False, smooth=False, bias=False):
         """Initialize the threshold module.
@@ -104,13 +105,13 @@ class DBHead(nn.Module):
             nn.Sequential: The threshold module.
         """
         try:
-            print(f"Initializing threshold module: inner_channels={inner_channels}, serial={serial}, smooth={smooth}, bias={bias}")
+            logger.model_info(f"Initializing threshold module: inner_channels={inner_channels}, serial={serial}, smooth={smooth}, bias={bias}")
             in_channels = inner_channels
             if serial:
                 in_channels += 1
 
             ic4 = inner_channels // 4
-            print(f"Threshold module intermediate channels: {ic4}")
+            logger.model_info(f"Threshold module intermediate channels: {ic4}")
 
             return nn.Sequential(
                 nn.Conv2d(in_channels, ic4, 3, padding=1, bias=bias),
@@ -122,7 +123,7 @@ class DBHead(nn.Module):
                 self._init_upsample(ic4, 1, smooth=smooth, bias=bias),
                 nn.Sigmoid())
         except Exception as e:
-            print(f"Error initializing threshold module: {e}")
+            logger.error(f"Error initializing threshold module: {e}")
             raise
 
     def _init_upsample(self, in_channels, out_channels, smooth=False, bias=False):
@@ -138,7 +139,7 @@ class DBHead(nn.Module):
             nn.Module: The upsampling module.
         """
         try:
-            print(f"Initializing upsampling: in_channels={in_channels}, out_channels={out_channels}, smooth={smooth}")
+            logger.model_info(f"Initializing upsampling: in_channels={in_channels}, out_channels={out_channels}, smooth={smooth}")
             if smooth:
                 inter_out_channels = out_channels
                 if out_channels == 1:
@@ -152,7 +153,7 @@ class DBHead(nn.Module):
             else:
                 return nn.ConvTranspose2d(in_channels, out_channels, 2, 2)
         except Exception as e:
-            print(f"Error initializing upsampling: {e}")
+            logger.error(f"Error initializing upsampling: {e}")
             raise
 
     def step_function(self, x, y):
@@ -168,8 +169,8 @@ class DBHead(nn.Module):
         try:
             # return torch.reciprocal(1 + torch.exp(-self.k * (x - y)))
             result = torch.sigmoid(self.k * (x - y))
-            print(f"Step function applied with k={self.k}, output shape: {result.shape}")
+            logger.model_info(f"Step function applied with k={self.k}, output shape: {result.shape}")
             return result
         except Exception as e:
-            print(f"Error in step function: {e}")
+            logger.error(f"Error in step function: {e}")
             raise

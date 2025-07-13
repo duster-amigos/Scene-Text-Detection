@@ -2,6 +2,7 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
+from utils import logger
 
 class ConvBnRelu(nn.Module):
     """
@@ -29,9 +30,9 @@ class ConvBnRelu(nn.Module):
                                   groups=groups, bias=bias, padding_mode=padding_mode)
             self.bn = nn.BatchNorm2d(out_channels)
             self.relu = nn.ReLU(inplace=inplace)
-            print(f"ConvBnRelu initialized: in_channels={in_channels}, out_channels={out_channels}, kernel_size={kernel_size}")
+            logger.model_info(f"ConvBnRelu initialized: in_channels={in_channels}, out_channels={out_channels}, kernel_size={kernel_size}")
         except Exception as e:
-            print(f"Error initializing ConvBnRelu: {e}")
+            logger.error(f"Error initializing ConvBnRelu: {e}")
             raise
 
     def forward(self, x):
@@ -50,7 +51,7 @@ class ConvBnRelu(nn.Module):
             x = self.relu(x)
             return x
         except Exception as e:
-            print(f"Error in ConvBnRelu forward pass: {e}")
+            logger.error(f"Error in ConvBnRelu forward pass: {e}")
             raise
 
 class FPEM_FFM(nn.Module):
@@ -69,7 +70,7 @@ class FPEM_FFM(nn.Module):
         """
         super().__init__()
         try:
-            print(f"Initializing FPEM_FFM: in_channels={in_channels}, inner_channels={inner_channels}, fpem_repeat={fpem_repeat}")
+            logger.model_info(f"Initializing FPEM_FFM: in_channels={in_channels}, inner_channels={inner_channels}, fpem_repeat={fpem_repeat}")
             self.conv_out = inner_channels
             inplace = True
             # Reduce layers to adjust channel dimensions
@@ -80,11 +81,11 @@ class FPEM_FFM(nn.Module):
             self.fpems = nn.ModuleList()
             for i in range(fpem_repeat):
                 self.fpems.append(FPEM(self.conv_out))
-                print(f"Added FPEM module {i+1}/{fpem_repeat}")
+                logger.model_info(f"Added FPEM module {i+1}/{fpem_repeat}")
             self.out_channels = self.conv_out * 4
-            print(f"FPEM_FFM initialized with output channels: {self.out_channels}")
+            logger.model_info(f"FPEM_FFM initialized with output channels: {self.out_channels}")
         except Exception as e:
-            print(f"Error initializing FPEM_FFM: {e}")
+            logger.error(f"Error initializing FPEM_FFM: {e}")
             raise
 
     def forward(self, x):
@@ -98,18 +99,18 @@ class FPEM_FFM(nn.Module):
             Tensor: The fused feature map.
         """
         try:
-            print(f"FPEM_FFM forward pass - input shapes: {[t.shape for t in x]}")
+            logger.model_info(f"FPEM_FFM forward pass - input shapes: {[t.shape for t in x]}")
             c2, c3, c4, c5 = x
             # Reduce channel dimensions
             c2 = self.reduce_conv_c2(c2)
             c3 = self.reduce_conv_c3(c3)
             c4 = self.reduce_conv_c4(c4)
             c5 = self.reduce_conv_c5(c5)
-            print(f"Channel reduction completed - shapes: c2={c2.shape}, c3={c3.shape}, c4={c4.shape}, c5={c5.shape}")
+            logger.model_info(f"Channel reduction completed - shapes: c2={c2.shape}, c3={c3.shape}, c4={c4.shape}, c5={c5.shape}")
 
             # Apply FPEM modules and accumulate features
             for i, fpem in enumerate(self.fpems):
-                print(f"Applying FPEM module {i+1}/{len(self.fpems)}")
+                logger.model_info(f"Applying FPEM module {i+1}/{len(self.fpems)}")
                 c2, c3, c4, c5 = fpem(c2, c3, c4, c5)
                 if i == 0:
                     c2_ffm = c2
@@ -123,15 +124,15 @@ class FPEM_FFM(nn.Module):
                     c5_ffm += c5
 
             # Feature Fusion: upsample and concatenate
-            print("Performing feature fusion with upsampling")
+            logger.model_info("Performing feature fusion with upsampling")
             c5 = F.interpolate(c5_ffm, size=c2_ffm.size()[-2:], mode='bilinear', align_corners=False)
             c4 = F.interpolate(c4_ffm, size=c2_ffm.size()[-2:], mode='bilinear', align_corners=False)
             c3 = F.interpolate(c3_ffm, size=c2_ffm.size()[-2:], mode='bilinear', align_corners=False)
             Fy = torch.cat([c2_ffm, c3, c4, c5], dim=1)
-            print(f"FPEM_FFM forward pass completed - output shape: {Fy.shape}")
+            logger.model_info(f"FPEM_FFM forward pass completed - output shape: {Fy.shape}")
             return Fy
         except Exception as e:
-            print(f"Error in FPEM_FFM forward pass: {e}")
+            logger.error(f"Error in FPEM_FFM forward pass: {e}")
             raise
 
 class FPEM(nn.Module):
@@ -147,16 +148,16 @@ class FPEM(nn.Module):
         """
         super().__init__()
         try:
-            print(f"Initializing FPEM module with in_channels={in_channels}")
+            logger.model_info(f"Initializing FPEM module with in_channels={in_channels}")
             self.up_add1 = SeparableConv2d(in_channels, in_channels, 1)
             self.up_add2 = SeparableConv2d(in_channels, in_channels, 1)
             self.up_add3 = SeparableConv2d(in_channels, in_channels, 1)
             self.down_add1 = SeparableConv2d(in_channels, in_channels, 2)
             self.down_add2 = SeparableConv2d(in_channels, in_channels, 2)
             self.down_add3 = SeparableConv2d(in_channels, in_channels, 2)
-            print("FPEM module initialized successfully")
+            logger.model_info("FPEM module initialized successfully")
         except Exception as e:
-            print(f"Error initializing FPEM module: {e}")
+            logger.error(f"Error initializing FPEM module: {e}")
             raise
 
     def forward(self, c2, c3, c4, c5):
@@ -173,7 +174,7 @@ class FPEM(nn.Module):
             tuple: Enhanced feature maps (c2, c3, c4, c5).
         """
         try:
-            print(f"FPEM forward pass - input shapes: c2={c2.shape}, c3={c3.shape}, c4={c4.shape}, c5={c5.shape}")
+            logger.model_info(f"FPEM forward pass - input shapes: c2={c2.shape}, c3={c3.shape}, c4={c4.shape}, c5={c5.shape}")
             # Up stage: top-down path
             c4 = self.up_add1(self._upsample_add(c5, c4))
             c3 = self.up_add2(self._upsample_add(c4, c3))
@@ -183,10 +184,10 @@ class FPEM(nn.Module):
             c3 = self.down_add1(self._upsample_add(c3, c2))
             c4 = self.down_add2(self._upsample_add(c4, c3))
             c5 = self.down_add3(self._upsample_add(c5, c4))
-            print(f"FPEM forward pass completed - output shapes: c2={c2.shape}, c3={c3.shape}, c4={c4.shape}, c5={c5.shape}")
+            logger.model_info(f"FPEM forward pass completed - output shapes: c2={c2.shape}, c3={c3.shape}, c4={c4.shape}, c5={c5.shape}")
             return c2, c3, c4, c5
         except Exception as e:
-            print(f"Error in FPEM forward pass: {e}")
+            logger.error(f"Error in FPEM forward pass: {e}")
             raise
 
     def _upsample_add(self, x, y):
@@ -203,7 +204,7 @@ class FPEM(nn.Module):
         try:
             return F.interpolate(x, size=y.size()[2:], mode='bilinear', align_corners=False) + y
         except Exception as e:
-            print(f"Error in _upsample_add: {e}")
+            logger.error(f"Error in _upsample_add: {e}")
             raise
 
 class SeparableConv2d(nn.Module):
@@ -221,15 +222,15 @@ class SeparableConv2d(nn.Module):
         """
         super(SeparableConv2d, self).__init__()
         try:
-            print(f"Initializing SeparableConv2d: in_channels={in_channels}, out_channels={out_channels}, stride={stride}")
+            logger.model_info(f"Initializing SeparableConv2d: in_channels={in_channels}, out_channels={out_channels}, stride={stride}")
             self.depthwise_conv = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3, padding=1,
                                             stride=stride, groups=in_channels)
             self.pointwise_conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
             self.bn = nn.BatchNorm2d(out_channels)
             self.relu = nn.ReLU()
-            print("SeparableConv2d initialized successfully")
+            logger.model_info("SeparableConv2d initialized successfully")
         except Exception as e:
-            print(f"Error initializing SeparableConv2d: {e}")
+            logger.error(f"Error initializing SeparableConv2d: {e}")
             raise
 
     def forward(self, x):
@@ -249,5 +250,5 @@ class SeparableConv2d(nn.Module):
             x = self.relu(x)
             return x
         except Exception as e:
-            print(f"Error in SeparableConv2d forward pass: {e}")
+            logger.error(f"Error in SeparableConv2d forward pass: {e}")
             raise
