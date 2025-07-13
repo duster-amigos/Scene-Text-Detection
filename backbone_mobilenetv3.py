@@ -10,11 +10,9 @@ class MobileNetV3(nn.Module):
         logger.model_info(f"Initializing MobileNetV3 backbone")
 
         def set_module_inplace_false(module):
-            for child in module.children():
-                if isinstance(child, (nn.ReLU, nn.ReLU6, nn.Hardswish)):
-                    child.inplace = False
-                else:
-                    set_module_inplace_false(child)
+            for m in module.modules():
+                if isinstance(m, (nn.ReLU, nn.ReLU6, nn.Hardswish)):
+                    m.inplace = False
 
         try:
             if pretrained:
