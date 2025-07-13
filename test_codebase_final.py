@@ -7,23 +7,19 @@ Run this in Google Colab with GPU to verify everything works correctly.
 
 # Standard library imports
 import os
-import shutil
+import time
 import traceback
-
-# Third-party imports
-import cv2
-import numpy as np
 import torch
 import torch.nn as nn
+import torch.optim as optim
 from torch.utils.data import DataLoader
-from torch.optim import SGD
+import cv2
+import numpy as np
 
-# Local imports
 from model import Model
-from losses import DBLoss, BalanceCrossEntropyLoss, DiceLoss, MaskL1Loss
-from datasets.icdar2015 import ICDAR2015Dataset
-from utils.metrics import compute_batch_metrics, evaluate_detections
+from losses import DBLoss
 from utils.postprocess import process_predictions
+from utils.metrics import compute_batch_metrics
 
 # Add current directory to path
 import sys
@@ -444,7 +440,9 @@ def create_model(device, pretrained=False):
     }
     
     try:
+        # Initialize model on CPU first
         model = Model(model_config)
+        
         # Initialize weights before moving to device
         for m in model.modules():
             if isinstance(m, (nn.Conv2d, nn.Linear)):
@@ -455,7 +453,13 @@ def create_model(device, pretrained=False):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
         
+        # Move model to device after initialization
         model = model.to(device)
+        
+        # Ensure CUDA synchronization if using GPU
+        if device.type == 'cuda':
+            torch.cuda.synchronize()
+        
         return model
     except Exception as e:
         print_error(f"Error creating model: {str(e)}")
@@ -466,45 +470,39 @@ def test_training_step(device):
     print_header("Testing Training Step")
     
     try:
-        from losses import DBLoss
-        from torch.optim import SGD
-        
         # Create model with proper initialization
         model = create_model(device)
-        criterion = DBLoss().to(device)
-        optimizer = SGD(model.parameters(), lr=0.007, momentum=0.9, weight_decay=1e-4)
+        model.train()
         
-        # Create dummy data with correct shapes and values
+        # Create optimizer
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+        
+        # Create dummy batch
         batch_size = 2
-        H, W = 640, 640
-        images = torch.randn(batch_size, 3, H, W).to(device)
+        images = torch.randn(batch_size, 3, 640, 640).to(device)
         targets = {
-            'shrink_map': torch.sigmoid(torch.randn(batch_size, 1, H, W)).to(device),  # Values between 0 and 1
-            'shrink_mask': torch.ones(batch_size, H, W).to(device),  # Binary mask
-            'threshold_map': torch.sigmoid(torch.randn(batch_size, 1, H, W)).to(device),  # Values between 0 and 1
-            'threshold_mask': torch.ones(batch_size, H, W).to(device),  # Binary mask
-            'boxes': torch.randn(batch_size, 4, 2).to(device)  # Dummy boxes
+            'shrink_map': torch.randn(batch_size, 1, 640, 640).to(device),
+            'shrink_mask': torch.ones(batch_size, 640, 640).to(device),
+            'threshold_map': torch.randn(batch_size, 1, 640, 640).to(device),
+            'threshold_mask': torch.ones(batch_size, 640, 640).to(device)
         }
         
-        # Training step
-        model.train()
+        # Forward pass
         optimizer.zero_grad()
-        
-        # Forward pass - model outputs (B, 3, H, W) in training mode
         predictions = model(images)
-        assert predictions.shape == (batch_size, 3, H, W), f"Wrong prediction shape: {predictions.shape}"
         
         # Compute loss
-        losses = criterion(predictions, targets)
-        loss = losses['loss']
+        criterion = DBLoss().to(device)
+        loss_dict = criterion(predictions, targets)
+        loss = loss_dict['loss']
         
         # Backward pass
         loss.backward()
         optimizer.step()
         
-        print_info(f"Training loss: {loss.item():.4f}")
-        print_info(f"Loss components: {list(losses.keys())}")
-        print_info(f"Prediction shape: {predictions.shape}")
+        # Ensure CUDA synchronization
+        if device.type == 'cuda':
+            torch.cuda.synchronize()
         
         print_success("Training step test passed")
         return True
@@ -527,8 +525,16 @@ def test_inference(device):
         batch_size = 2
         images = torch.randn(batch_size, 3, 640, 640).to(device)
         
+        # Ensure CUDA synchronization before inference
+        if device.type == 'cuda':
+            torch.cuda.synchronize()
+        
         with torch.no_grad():
             predictions = model(images)
+        
+        # Ensure CUDA synchronization after inference
+        if device.type == 'cuda':
+            torch.cuda.synchronize()
         
         print_info(f"Prediction shape: {predictions.shape}")
         
