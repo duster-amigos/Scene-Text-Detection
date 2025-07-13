@@ -36,12 +36,12 @@
         "checkpoint_path": "checkpoints/dbnet_checkpoint.pth"
     },
     "data": {
-        "train_images": "data/icdar2015/train/images",
-        "train_labels": "data/icdar2015/train/labels",
-        "val_images": "",
-        "val_labels": "",
-        "test_images": "data/icdar2015/test/images",
-        "test_labels": "data/icdar2015/test/labels"
+        "train_images": "/content/Scene-Text-Detection/train_data/images",
+        "train_labels": "/content/Scene-Text-Detection/train_data/texts",
+        "val_images": "/content/Scene-Text-Detection/test_data/images",
+        "val_labels": "/content/Scene-Text-Detection/test_data/texts",
+        "test_images": "",
+        "test_labels": ""
     },
     "inference": {
         "min_area": 100,
