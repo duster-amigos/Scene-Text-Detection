@@ -86,6 +86,8 @@ class ICDAR2015Dataset(Dataset):
             if os.path.exists(gt_path):
                 try:
                     with open(gt_path, 'r', encoding='utf-8-sig') as f:
+                        all_lines = [l for l in f if l.strip()]
+                        print(f"    → This file has {len(all_lines)} annotations")
                         for line_num, line in enumerate(f):
                             line = line.strip()
                             if line:
@@ -95,6 +97,7 @@ class ICDAR2015Dataset(Dataset):
                                     coords = [float(x) for x in parts[:8]]
                                     polygon = np.array(coords).reshape(-1, 2)
                                     polygons.append(polygon)
+                                    print(f"Polygon: {polygon}")
                                     print(f"Loaded polygon {len(polygons)} from line {line_num + 1}")
                                 else:
                                     print(f"Warning: Invalid line format at line {line_num + 1}: {line}")
