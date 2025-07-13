@@ -1,23 +1,17 @@
+# backbone_mobilenetv3_small.py
+import torch
 import torch.nn as nn
-from torchvision.models import mobilenet_v3_large
+from torchvision.models import mobilenet_v3_small
 
 class MobileNetV3(nn.Module):
-    """
-    Wraps torchvision’s MobileNetV3-Large so that it outputs exactly
-    four feature maps with channel sizes [40, 80, 160, 960].
-    """
-    def __init__(self, pretrained: bool = True):
+    def __init__(self, pretrained: bool = True, in_channels: int = 3):
         super().__init__()
-        m = mobilenet_v3_large(pretrained=pretrained)
-        self.features = m.features
 
-        # The layer indices in m.features where we tap out:
-        #   idx  4 → 40 ch
-        #   idx  7 → 80 ch
-        #   idx 13 →160 ch
-        #   idx 16 →960 ch
-        self._idxs = [4, 7, 13, 16]
-        self.out_channels = [40, 80, 160, 960]
+        m = mobilenet_v3_small(pretrained=pretrained)
+
+        self.features = m.features
+        self._idxs = [2, 4, 9, len(self.features) - 1]
+        self.out_channels = [24, 40, 96, 576]
 
     def forward(self, x):
         outs = []
@@ -26,3 +20,33 @@ class MobileNetV3(nn.Module):
             if i in self._idxs:
                 outs.append(x)
         return outs
+
+# # backbone_mobilenetv3_large.py
+# import torch.nn as nn
+# from torchvision.models import mobilenet_v3_large
+
+# class MobileNetV3(nn.Module):
+#     """
+#     Wraps torchvision’s MobileNetV3-Large so that it outputs exactly
+#     four feature maps with channel sizes [40, 80, 160, 960].
+#     """
+#     def __init__(self, pretrained: bool = True, in_channels: int = 3):
+#         super().__init__()
+#         m = mobilenet_v3_large(pretrained=pretrained)
+#         self.features = m.features
+
+#         # The layer indices in m.features where we tap out:
+#         #   idx  4 → 40 ch
+#         #   idx  7 → 80 ch
+#         #   idx 13 →160 ch
+#         #   idx 16 →960 ch
+#         self._idxs = [4, 7, 13, 16]
+#         self.out_channels = [40, 80, 160, 960]
+
+#     def forward(self, x):
+#         outs = []
+#         for i, layer in enumerate(self.features):
+#             x = layer(x)
+#             if i in self._idxs:
+#                 outs.append(x)
+#         return outs

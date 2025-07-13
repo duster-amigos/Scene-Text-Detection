@@ -1,115 +1,4 @@
-# import torch
-# from torch import nn
-
-# class DBHead(nn.Module):
-#     """Differentiable Binarization head for text detection.
-#     Produces shrink (binary) and threshold maps, plus a training‐time binary approximation.
-#     """
-#     def __init__(self, in_channels: int, k: float = 50.0):
-#         """
-#         Args:
-#             in_channels: number of channels in the input feature map
-#             k: steepness factor for the differentiable step function
-#         """
-#         super().__init__()
-#         self.k = k
-#         c4 = in_channels // 4  # quarter channels for intermediate convs
-
-#         # --- Binarization branch: produces shrink maps ---
-#         self.binarize = nn.Sequential(
-#             nn.Conv2d(in_channels, c4, kernel_size=3, padding=1),
-#             nn.BatchNorm2d(c4),
-#             nn.ReLU(inplace=True),
-#             nn.ConvTranspose2d(c4, c4, kernel_size=2, stride=2),  # upsample ×2
-#             nn.BatchNorm2d(c4),
-#             nn.ReLU(inplace=True),
-#             nn.ConvTranspose2d(c4, 1, kernel_size=2, stride=2),   # upsample ×2 to 1 channel
-#             nn.Sigmoid(),  # output in [0,1]
-#         )
-
-#         # --- Threshold branch: produces threshold maps ---
-#         self.thresh = self._make_thresh(in_channels, c4)
-
-#         # Initialize all Conv and BatchNorm layers
-#         self.apply(self._init_weights)
-
-#     def forward(self, x: torch.Tensor) -> torch.Tensor:
-#         s = self.binarize(x)             # shrink map
-#         t = self.thresh(x)               # threshold map
-#         if self.training:
-#             # differentiable binary map during training
-#             b = torch.sigmoid(self.k * (s - t))
-#             return torch.cat([s, t, b], dim=1)
-#         else:
-#             # only shrink + threshold at inference
-#             return torch.cat([s, t], dim=1)
-
-#     def _init_weights(self, m: nn.Module):
-#         name = m.__class__.__name__
-#         if 'Conv' in name:
-#             nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
-#             if m.bias is not None:
-#                 nn.init.constant_(m.bias, 0.0)
-#         elif 'BatchNorm' in name:
-#             nn.init.constant_(m.weight, 1.0)
-#             nn.init.constant_(m.bias, 1e-4)
-
-#     def _make_thresh(
-#         self,
-#         in_ch: int,
-#         c4: int,
-#         smooth: bool = False,
-#         bias: bool = False,
-#         serial: bool = False
-#     ) -> nn.Sequential:
-#         """Builds the threshold branch."""
-#         layers: list[nn.Module] = []
-#         inc = in_ch + (1 if serial else 0)
-
-#         # initial conv + activation
-#         layers += [
-#             nn.Conv2d(inc, c4, kernel_size=3, padding=1, bias=bias),
-#             nn.BatchNorm2d(c4),
-#             nn.ReLU(inplace=True),
-#         ]
-
-#         # upsample block 1
-#         layers += self._make_upsample(c4, c4, smooth, bias)
-#         layers += [
-#             nn.BatchNorm2d(c4),
-#             nn.ReLU(inplace=True),
-#         ]
-
-#         # upsample block 2 -> single channel
-#         layers += self._make_upsample(c4, 1, smooth, bias)
-#         layers += [nn.Sigmoid()]
-
-#         return nn.Sequential(*layers)
-
-#     def _make_upsample(
-#         self,
-#         in_ch: int,
-#         out_ch: int,
-#         smooth: bool,
-#         bias: bool
-#     ) -> list[nn.Module]:
-#         """Returns a list of modules for upsampling by a factor of 2."""
-#         if smooth:
-#             # nearest‐neighbor upsample + conv smoothing
-#             inter = out_ch if out_ch != 1 else in_ch
-#             seq = [
-#                 nn.Upsample(scale_factor=2, mode='nearest'),
-#                 nn.Conv2d(in_ch, inter, kernel_size=3, padding=1, bias=bias),
-#             ]
-#             if out_ch == 1:
-#                 # final 1×1 conv to get exactly one channel
-#                 seq.append(nn.Conv2d(inter, 1, kernel_size=1, padding=0, bias=True))
-#             return seq
-#         else:
-#             # learnable transposed‐conv upsample
-#             return [nn.ConvTranspose2d(in_ch, out_ch, kernel_size=2, stride=2)]
-
-
+# head_DBHead.py
 import torch
 from torch import nn
 
@@ -190,7 +79,7 @@ class DBHead(nn.Module):
         in_channels = inner_channels
         if serial:
             in_channels += 1
-        
+
         ic4 = inner_channels // 4
 
         return nn.Sequential(
