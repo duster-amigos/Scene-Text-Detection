@@ -102,7 +102,7 @@ class ICDAR2015Dataset(Dataset):
                     with open(gt_path, 'r', encoding='utf-8-sig') as f:
                         all_lines = [l for l in f if l.strip()]
                         print(f"    → This file has {len(all_lines)} annotations")
-                        for line_num, line in enumerate(f):
+                        for line_num, line in enumerate(all_lines):
                             line = line.strip()
                             print(f"Line: {line}")
                             if line:
