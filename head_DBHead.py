@@ -1,180 +1,242 @@
-# head_DBHead.py
+# import torch
+# from torch import nn
+
+# class DBHead(nn.Module):
+#     """Differentiable Binarization head for text detection.
+#     Produces shrink (binary) and threshold maps, plus a training‐time binary approximation.
+#     """
+#     def __init__(self, in_channels: int, k: float = 50.0):
+#         """
+#         Args:
+#             in_channels: number of channels in the input feature map
+#             k: steepness factor for the differentiable step function
+#         """
+#         super().__init__()
+#         self.k = k
+#         c4 = in_channels // 4  # quarter channels for intermediate convs
+
+#         # --- Binarization branch: produces shrink maps ---
+#         self.binarize = nn.Sequential(
+#             nn.Conv2d(in_channels, c4, kernel_size=3, padding=1),
+#             nn.BatchNorm2d(c4),
+#             nn.ReLU(inplace=True),
+#             nn.ConvTranspose2d(c4, c4, kernel_size=2, stride=2),  # upsample ×2
+#             nn.BatchNorm2d(c4),
+#             nn.ReLU(inplace=True),
+#             nn.ConvTranspose2d(c4, 1, kernel_size=2, stride=2),   # upsample ×2 to 1 channel
+#             nn.Sigmoid(),  # output in [0,1]
+#         )
+
+#         # --- Threshold branch: produces threshold maps ---
+#         self.thresh = self._make_thresh(in_channels, c4)
+
+#         # Initialize all Conv and BatchNorm layers
+#         self.apply(self._init_weights)
+
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         s = self.binarize(x)             # shrink map
+#         t = self.thresh(x)               # threshold map
+#         if self.training:
+#             # differentiable binary map during training
+#             b = torch.sigmoid(self.k * (s - t))
+#             return torch.cat([s, t, b], dim=1)
+#         else:
+#             # only shrink + threshold at inference
+#             return torch.cat([s, t], dim=1)
+
+#     def _init_weights(self, m: nn.Module):
+#         name = m.__class__.__name__
+#         if 'Conv' in name:
+#             nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
+#             if m.bias is not None:
+#                 nn.init.constant_(m.bias, 0.0)
+#         elif 'BatchNorm' in name:
+#             nn.init.constant_(m.weight, 1.0)
+#             nn.init.constant_(m.bias, 1e-4)
+
+#     def _make_thresh(
+#         self,
+#         in_ch: int,
+#         c4: int,
+#         smooth: bool = False,
+#         bias: bool = False,
+#         serial: bool = False
+#     ) -> nn.Sequential:
+#         """Builds the threshold branch."""
+#         layers: list[nn.Module] = []
+#         inc = in_ch + (1 if serial else 0)
+
+#         # initial conv + activation
+#         layers += [
+#             nn.Conv2d(inc, c4, kernel_size=3, padding=1, bias=bias),
+#             nn.BatchNorm2d(c4),
+#             nn.ReLU(inplace=True),
+#         ]
+
+#         # upsample block 1
+#         layers += self._make_upsample(c4, c4, smooth, bias)
+#         layers += [
+#             nn.BatchNorm2d(c4),
+#             nn.ReLU(inplace=True),
+#         ]
+
+#         # upsample block 2 -> single channel
+#         layers += self._make_upsample(c4, 1, smooth, bias)
+#         layers += [nn.Sigmoid()]
+
+#         return nn.Sequential(*layers)
+
+#     def _make_upsample(
+#         self,
+#         in_ch: int,
+#         out_ch: int,
+#         smooth: bool,
+#         bias: bool
+#     ) -> list[nn.Module]:
+#         """Returns a list of modules for upsampling by a factor of 2."""
+#         if smooth:
+#             # nearest‐neighbor upsample + conv smoothing
+#             inter = out_ch if out_ch != 1 else in_ch
+#             seq = [
+#                 nn.Upsample(scale_factor=2, mode='nearest'),
+#                 nn.Conv2d(in_ch, inter, kernel_size=3, padding=1, bias=bias),
+#             ]
+#             if out_ch == 1:
+#                 # final 1×1 conv to get exactly one channel
+#                 seq.append(nn.Conv2d(inter, 1, kernel_size=1, padding=0, bias=True))
+#             return seq
+#         else:
+#             # learnable transposed‐conv upsample
+#             return [nn.ConvTranspose2d(in_ch, out_ch, kernel_size=2, stride=2)]
+
+
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from utils.logger import logger, log_exception
+from torch import nn
 
 class DBHead(nn.Module):
+    """DBHead module for differentiable binarization in text detection tasks.
+    Generates shrink maps and threshold maps; includes binary maps during training.
     """
-    Differentiable Binarization (DB) head for text detection.
-    """
-    def __init__(self, in_channels, out_channels=2, k=50, adaptive=False):
-        """
-        Initialize DB Head.
-        
+    def __init__(self, in_channels, out_channels, k=50):
+        """Initialize the DBHead module.
+
         Args:
-            in_channels (int): Number of input channels
-            out_channels (int): Number of output channels (2 for inference, 3 for training)
-            k (int): Threshold for binarization
-            adaptive (bool): Whether to use adaptive thresholding
+            in_channels (int): Number of input channels.
+            out_channels (int): Number of output channels (unused in this implementation).
+            k (int): Steepness parameter for the step function.
         """
         super().__init__()
-        logger.info(f"Initializing DBHead (in_channels={in_channels}, out_channels={out_channels}, k={k}, adaptive={adaptive})")
-        
-        try:
-            self.k = k
-            self.adaptive = adaptive
-            self.out_channels = out_channels
-            
-            # Validate input parameters
-            if in_channels <= 0:
-                raise ValueError(f"in_channels must be positive, got {in_channels}")
-            if out_channels not in [2, 3]:
-                raise ValueError(f"out_channels must be 2 or 3, got {out_channels}")
-            if k <= 0:
-                raise ValueError(f"k must be positive, got {k}")
-            
-            # Build convolutional layers
-            logger.debug("Building convolutional layers...")
-            self.binarize = nn.Sequential(
-                nn.Conv2d(in_channels, in_channels // 4, 3, padding=1),
-                nn.BatchNorm2d(in_channels // 4),
-                nn.ReLU(inplace=True),
-                nn.ConvTranspose2d(in_channels // 4, in_channels // 4, 2, 2),
-                nn.BatchNorm2d(in_channels // 4),
-                nn.ReLU(inplace=True),
-                nn.ConvTranspose2d(in_channels // 4, 1, 2, 2),
-                nn.Sigmoid()
-            )
-            
-            if self.adaptive:
-                logger.debug("Building adaptive threshold branch...")
-                self.thresh = nn.Sequential(
-                    nn.Conv2d(in_channels, in_channels // 4, 3, padding=1),
-                    nn.BatchNorm2d(in_channels // 4),
-                    nn.ReLU(inplace=True),
-                    nn.ConvTranspose2d(in_channels // 4, in_channels // 4, 2, 2),
-                    nn.BatchNorm2d(in_channels // 4),
-                    nn.ReLU(inplace=True),
-                    nn.ConvTranspose2d(in_channels // 4, 1, 2, 2),
-                    nn.Sigmoid()
-                )
-            
-            # Initialize weights
-            self._initialize_weights()
-            logger.info("DBHead initialized successfully")
-            
-        except Exception as e:
-            log_exception(e, "Failed to initialize DBHead")
-            raise RuntimeError(f"DBHead initialization failed: {str(e)}")
+        self.k = k
+        # Binarization module: produces shrink maps
+        inc4 = in_channels // 4
+        self.binarize = nn.Sequential(
+            nn.Conv2d(in_channels, inc4, 3, padding=1),
+            nn.BatchNorm2d(inc4),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(inc4, inc4, 2, 2),
+            nn.BatchNorm2d(inc4),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(inc4, 1, 2, 2),
+            nn.Sigmoid())
+        self.binarize.apply(self.weights_init)
 
-    def _initialize_weights(self):
-        """Initialize weights for all layers."""
-        try:
-            logger.debug("Initializing DBHead weights...")
-            for m in self.modules():
-                if isinstance(m, nn.Conv2d):
-                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                    if m.bias is not None:
-                        nn.init.constant_(m.bias, 0)
-                elif isinstance(m, nn.ConvTranspose2d):
-                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                    if m.bias is not None:
-                        nn.init.constant_(m.bias, 0)
-                elif isinstance(m, nn.BatchNorm2d):
-                    nn.init.constant_(m.weight, 1)
-                    nn.init.constant_(m.bias, 0)
-            logger.debug("DBHead weights initialized successfully")
-        except Exception as e:
-            log_exception(e, "Failed to initialize DBHead weights")
-            raise RuntimeError(f"Weight initialization failed: {str(e)}")
-
-    def step_function(self, x, y):
-        """
-        Differentiable step function using piece-wise linear approximation.
-        """
-        try:
-            logger.debug(f"Computing step function with k={self.k}")
-            return torch.reciprocal(1 + torch.exp(-self.k * (x - y)))
-        except Exception as e:
-            log_exception(e, "Failed in step function computation")
-            raise RuntimeError(f"Step function failed: {str(e)}")
+        # Threshold module: produces threshold maps
+        self.thresh = self._init_thresh(in_channels)
+        self.thresh.apply(self.weights_init)
 
     def forward(self, x):
-        """
-        Forward pass of DB Head.
-        
-        Args:
-            x (Tensor): Input features
-            
-        Returns:
-            Tensor: Probability map and threshold map
-        """
-        try:
-            logger.debug(f"DBHead forward pass - Input shape: {x.shape}")
-            
-            # Validate input
-            if x.dim() != 4:
-                raise ValueError(f"Expected 4D input tensor, got {x.dim()}D")
-            
-            # Get probability map
-            binary = self.binarize(x)
-            logger.debug(f"Probability map shape: {binary.shape}")
-            
-            if self.training:
-                if self.adaptive:
-                    logger.debug("Computing adaptive threshold")
-                    thresh = self.thresh(x)
-                    logger.debug(f"Threshold map shape: {thresh.shape}")
-                    thresh_binary = self.step_function(binary, thresh)
-                    logger.debug(f"Thresholded binary map shape: {thresh_binary.shape}")
-                    return torch.cat((binary, thresh, thresh_binary), dim=1)
-                else:
-                    logger.debug("Using fixed threshold")
-                    return torch.cat((binary, torch.zeros_like(binary), binary), dim=1)
-            else:
-                logger.debug("Inference mode - returning probability and threshold maps")
-                return torch.cat((binary, torch.zeros_like(binary)), dim=1)
-                
-        except Exception as e:
-            log_exception(e, "Failed during DBHead forward pass")
-            raise RuntimeError(f"DBHead forward pass failed: {str(e)}")
+        """Forward pass of the DBHead module.
 
-if __name__ == '__main__':
-    # Test the DBHead
-    try:
-        logger.info("Testing DBHead...")
+        Args:
+            x (Tensor): Input feature maps.
+
+        Returns:
+            Tensor: Concatenated maps (shrink and threshold maps; binary maps added during training).
+        """
+        shrink_maps = self.binarize(x)
+        threshold_maps = self.thresh(x)
+        if self.training:
+            binary_maps = self.step_function(shrink_maps, threshold_maps)
+            y = torch.cat((shrink_maps, threshold_maps, binary_maps), dim=1)
+        else:
+            y = torch.cat((shrink_maps, threshold_maps), dim=1)
+        return y
+
+    def weights_init(self, m):
+        """Custom weight initialization for convolutional and batch norm layers.
+
+        Args:
+            m (nn.Module): Module to initialize.
+        """
+        classname = m.__class__.__name__
+        if classname.find('Conv') != -1:
+            nn.init.kaiming_normal_(m.weight.data)
+        elif classname.find('BatchNorm') != -1:
+            m.weight.data.fill_(1.)
+            m.bias.data.fill_(1e-4)
+
+    def _init_thresh(self, inner_channels, serial=False, smooth=False, bias=False):
+        """Initialize the threshold module.
+
+        Args:
+            inner_channels (int): Number of inner channels.
+            serial (bool): If True, adds an extra input channel.
+            smooth (bool): If True, uses smooth upsampling.
+            bias (bool): If True, adds bias to convolutional layers.
+
+        Returns:
+            nn.Sequential: The threshold module.
+        """
+        in_channels = inner_channels
+        if serial:
+            in_channels += 1
         
-        # Test parameters
-        batch_size = 2
-        in_channels = 256
-        height = 160
-        width = 160
-        
-        # Create dummy input
-        x = torch.randn(batch_size, in_channels, height, width)
-        logger.debug(f"Created test input with shape: {x.shape}")
-        
-        # Test both adaptive and non-adaptive modes
-        for adaptive in [True, False]:
-            logger.info(f"\nTesting with adaptive={adaptive}")
-            
-            # Initialize head
-            head = DBHead(in_channels=in_channels, out_channels=2, adaptive=adaptive)
-            logger.info("DBHead created successfully")
-            
-            # Test training mode
-            head.train()
-            y_train = head(x)
-            logger.info(f"Training output shape: {y_train.shape}")
-            
-            # Test inference mode
-            head.eval()
-            y_eval = head(x)
-            logger.info(f"Inference output shape: {y_eval.shape}")
-        
-        logger.info("All DBHead tests passed successfully!")
-        
-    except Exception as e:
-        log_exception(e, "DBHead test failed")
-        logger.error("Test failed. See error details above.")
+        ic4 = inner_channels // 4
+
+        return nn.Sequential(
+            nn.Conv2d(in_channels, ic4, 3, padding=1, bias=bias),
+            nn.BatchNorm2d(ic4),
+            nn.ReLU(inplace=True),
+            self._init_upsample(ic4, ic4, smooth=smooth, bias=bias),
+            nn.BatchNorm2d(ic4),
+            nn.ReLU(inplace=True),
+            self._init_upsample(ic4, 1, smooth=smooth, bias=bias),
+            nn.Sigmoid())
+
+    def _init_upsample(self, in_channels, out_channels, smooth=False, bias=False):
+        """Initialize upsampling layers.
+
+        Args:
+            in_channels (int): Number of input channels.
+            out_channels (int): Number of output channels.
+            smooth (bool): If True, uses upsampling followed by convolution.
+            bias (bool): If True, adds bias to convolutional layers.
+
+        Returns:
+            nn.Module: The upsampling module.
+        """
+        if smooth:
+            inter_out_channels = out_channels
+            if out_channels == 1:
+                inter_out_channels = in_channels
+            module_list = [
+                nn.Upsample(scale_factor=2, mode='nearest'),
+                nn.Conv2d(in_channels, inter_out_channels, 3, 1, 1, bias=bias)]
+            if out_channels == 1:
+                module_list.append(nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=1, bias=True))
+            return nn.Sequential(module_list)
+        else:
+            return nn.ConvTranspose2d(in_channels, out_channels, 2, 2)
+
+    def step_function(self, x, y):
+        """Differentiable approximation of the step function.
+
+        Args:
+            x (Tensor): Input tensor.
+            y (Tensor): Threshold tensor.
+
+        Returns:
+            Tensor: Element-wise step function approximation.
+        """
+        # return torch.reciprocal(1 + torch.exp(-self.k * (x - y)))
+        return torch.sigmoid(self.k * (x - y))

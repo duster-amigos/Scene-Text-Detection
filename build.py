@@ -1,6 +1,6 @@
-# build.py
 import copy
 from losses import DBLoss
+from model import Model
 from neck_fpn import FPN
 from neck_fpem_ffm import FPEM_FFM
 from head_DBHead import DBHead
@@ -14,10 +14,7 @@ def build_model(config):
     copy_config = copy.deepcopy(config)
     arch_type = copy_config.pop('type')
     assert arch_type in support_model, f'{arch_type} is not developed yet!, only {support_model} are support now'
-    
-    # Import Model here to avoid circular import
-    from model import Model
-    arch_model = Model(copy_config)
+    arch_model = eval(arch_type)(copy_config)
     return arch_model
 
 def build_loss(config):

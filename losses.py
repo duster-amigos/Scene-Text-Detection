@@ -1,4 +1,3 @@
-# losses.py
 import torch
 import torch.nn as nn
 
@@ -28,41 +27,25 @@ class BalanceCrossEntropyLoss(nn.Module):
         Compute the balanced cross-entropy loss.
 
         Args:
-            pred (Tensor): Predicted probabilities, shape (N, 1, H, W) or (N, H, W)
-            gt (Tensor): Ground truth binary labels, shape (N, 1, H, W) or (N, H, W)
-            mask (Tensor): Mask indicating positive regions, shape (N, H, W)
-            return_origin (bool): If True, return the original loss along with the balanced loss
+            pred (Tensor): Predicted probabilities, shape :math:`(N, 1, H, W)`.
+            gt (Tensor): Ground truth binary labels, shape :math:`(N, 1, H, W)`.
+            mask (Tensor): Mask indicating positive regions, shape :math:`(N, H, W)`.
+            return_origin (bool): If True, return the original loss along with the balanced loss.
+
+        Returns:
+            Tensor: The computed loss. If return_origin is True, returns a tuple (balanced_loss, original_loss).
         """
-        # Ensure pred and gt have the same shape
-        if pred.dim() == 4:
-            pred = pred.squeeze(1)  # Remove channel dimension
-        if gt.dim() == 4:
-            gt = gt.squeeze(1)      # Remove channel dimension
-        
-        # Now both pred and gt should be (N, H, W)
-        assert pred.shape == gt.shape, f"Shape mismatch: pred {pred.shape} vs gt {gt.shape}"
-        
-        # Ensure values are between 0 and 1
-        pred = torch.clamp(pred, min=0, max=1)
-        gt = torch.clamp(gt, min=0, max=1)
-        
-        positive = (gt * mask).bool()
-        negative = ((1 - gt) * mask).bool()
-        
+        positive = (gt * mask).byte()
+        negative = ((1 - gt) * mask).byte()
         positive_count = int(positive.float().sum())
         negative_count = min(int(negative.float().sum()), int(positive_count * self.negative_ratio))
-        
         loss = nn.functional.binary_cross_entropy(pred, gt, reduction='none')
         positive_loss = loss * positive.float()
         negative_loss = loss * negative.float()
+        # negative_loss, _ = torch.topk(negative_loss.view(-1).contiguous(), negative_count)
+        negative_loss, _ = negative_loss.view(-1).topk(negative_count)
 
-        # Handle case when there are no negative samples
-        if negative_count > 0:
-            negative_loss, _ = negative_loss.view(-1).topk(negative_count)
-            balance_loss = (positive_loss.sum() + negative_loss.sum()) / (positive_count + negative_count + self.eps)
-        else:
-            # If no negative samples, just use positive loss
-            balance_loss = positive_loss.sum() / (positive_count + self.eps)
+        balance_loss = (positive_loss.sum() + negative_loss.sum()) / (positive_count + negative_count + self.eps)
 
         if return_origin:
             return balance_loss, loss
@@ -153,8 +136,7 @@ class MaskL1Loss(nn.Module):
         Returns:
             Tensor: The computed masked L1 loss.
         """
-        loss = torch.abs(pred - gt) * mask.unsqueeze(1)
-        loss = loss.sum() / (mask.sum() + self.eps)
+        loss = (torch.abs(pred - gt) * mask).sum() / (mask.sum() + self.eps)
         return loss
 
 
@@ -163,6 +145,16 @@ class DBLoss(nn.Module):
     Differentiable Binarization (DB) loss combining balanced cross-entropy, Dice, and masked L1 losses.
     """
     def __init__(self, alpha=1.0, beta=10, ohem_ratio=3, reduction='mean', eps=1e-6):
+        """
+        Initialize the DB loss module.
+
+        Args:
+            alpha (float): Weight for the shrink map loss.
+            beta (float): Weight for the threshold map loss.
+            ohem_ratio (float): Ratio for Online Hard Example Mining in balanced cross-entropy.
+            reduction (str): Reduction method, 'mean' or 'sum' (currently not used in computation).
+            eps (float): Small value to prevent division by zero.
+        """
         super().__init__()
         assert reduction in ['mean', 'sum'], " reduction must in ['mean','sum']"
         self.alpha = alpha
@@ -186,30 +178,24 @@ class DBLoss(nn.Module):
                 - 'threshold_mask': shape (N, H, W)
 
         Returns:
-            dict: Computed losses
+            dict: Computed losses:
+                - 'loss_shrink_maps': loss for shrink maps
+                - 'loss_threshold_maps': loss for threshold maps
+                - 'loss_binary_maps': loss for binary maps (only during training)
+                - 'loss': total loss
         """
-        # Ensure all maps have the correct shape (N, 1, H, W)
-        shrink_maps = pred[:, 0:1, :, :]  # Keep channel dimension
-        threshold_maps = pred[:, 1:2, :, :]  # Keep channel dimension
-        
-        # Ensure ground truth maps have correct shape
-        if 'shrink_map' in batch and batch['shrink_map'].dim() == 3:
-            batch['shrink_map'] = batch['shrink_map'].unsqueeze(1)
-        if 'threshold_map' in batch and batch['threshold_map'].dim() == 3:
-            batch['threshold_map'] = batch['threshold_map'].unsqueeze(1)
+        shrink_maps = pred[:, 0, :, :]
+        threshold_maps = pred[:, 1, :, :]
+        binary_maps = pred[:, 2, :, :]
 
-        # Compute losses
         loss_shrink_maps = self.bce_loss(shrink_maps, batch['shrink_map'], batch['shrink_mask'])
         loss_threshold_maps = self.l1_loss(threshold_maps, batch['threshold_map'], batch['threshold_mask'])
         metrics = dict(loss_shrink_maps=loss_shrink_maps, loss_threshold_maps=loss_threshold_maps)
-        
         if pred.size()[1] > 2:
-            binary_maps = pred[:, 2:3, :, :]  # Keep channel dimension
             loss_binary_maps = self.dice_loss(binary_maps, batch['shrink_map'], batch['shrink_mask'])
             metrics['loss_binary_maps'] = loss_binary_maps
             loss_all = self.alpha * loss_shrink_maps + self.beta * loss_threshold_maps + loss_binary_maps
             metrics['loss'] = loss_all
         else:
             metrics['loss'] = loss_shrink_maps
-            
         return metrics
