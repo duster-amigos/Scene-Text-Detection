@@ -77,8 +77,6 @@ dmypy.json
 lightning_logs/
 
 # Data files
-data/
-datasets/
 *.jpg
 *.jpeg
 *.png
@@ -92,10 +90,6 @@ datasets/
 *.wmv
 
 # Model checkpoints and outputs
-checkpoints/
-models/
-outputs/
-results/
 logs/
 runs/
 *.log
