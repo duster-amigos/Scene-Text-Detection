@@ -12,6 +12,8 @@ from src.data.icdar2015_dataset import ICDAR2015Dataset, get_transforms
 from src.models.losses import DBLoss
 import json
 from src.utils.logger import logger, print_device_info, print_model_summary, print_config_summary, print_training_progress, print_dataset_info, print_checkpoint_info
+import matplotlib.pyplot as plt
+import csv
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -87,6 +89,10 @@ class Trainer:
         # Training state
         self.start_epoch = 0
         self.best_loss = float('inf')
+        
+        # Add lists to store losses
+        self.epoch_train_losses = []
+        self.epoch_val_losses = []
         
         # Load checkpoint if exists
         if config['training']['resume'] and os.path.exists(config['training']['checkpoint_path']):
@@ -194,16 +200,21 @@ class Trainer:
                 'best_loss': self.best_loss,
                 'config': self.config
             }
-            
+            # Ensure checkpoint directory exists
+            checkpoint_path = self.config['training']['checkpoint_path']
+            checkpoint_dir = os.path.dirname(checkpoint_path)
+            if checkpoint_dir and not os.path.exists(checkpoint_dir):
+                os.makedirs(checkpoint_dir, exist_ok=True)
             # Save regular checkpoint
-            torch.save(checkpoint, self.config['training']['checkpoint_path'])
-            
+            torch.save(checkpoint, checkpoint_path)
             # Save best model
             if is_best:
-                best_path = self.config['training']['checkpoint_path'].replace('.pth', '_best.pth')
+                best_path = checkpoint_path.replace('.pth', '_best.pth')
+                best_dir = os.path.dirname(best_path)
+                if best_dir and not os.path.exists(best_dir):
+                    os.makedirs(best_dir, exist_ok=True)
                 torch.save(checkpoint, best_path)
                 print(f"Saved best model to {best_path}")
-                
         except Exception as e:
             print(f"Error saving checkpoint: {e}")
     
@@ -360,10 +371,12 @@ class Trainer:
                 
                 # Training
                 train_loss = self.train_epoch(epoch + 1)
+                self.epoch_train_losses.append(train_loss)
                 
                 # Validation (if validation data is available)
                 if self.val_loader is not None:
                     val_loss = self.validate_epoch(epoch + 1)
+                    self.epoch_val_losses.append(val_loss)
                     
                     # Save checkpoint based on validation loss
                     is_best = val_loss < self.best_loss
@@ -397,6 +410,33 @@ class Trainer:
             logger.error(f"Error in training: {e}")
             raise
         
+        # Plot and save loss curves at the end of training
+        try:
+            plt.figure()
+            plt.plot(self.epoch_train_losses, label='Train Loss')
+            if self.epoch_val_losses:
+                plt.plot(self.epoch_val_losses, label='Validation Loss')
+            plt.xlabel('Epoch')
+            plt.ylabel('Loss')
+            plt.title('Loss Curves')
+            plt.legend()
+            plt.savefig('loss_curves.png')
+            logger.success("Saved loss curves plot as loss_curves.png")
+        except Exception as e:
+            logger.error(f"Error saving loss curve plot: {e}")
+        # Save losses as CSV
+        try:
+            with open('losses.csv', 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['epoch', 'train_loss', 'val_loss'])
+                max_epochs = max(len(self.epoch_train_losses), len(self.epoch_val_losses))
+                for i in range(max_epochs):
+                    train_loss = self.epoch_train_losses[i] if i < len(self.epoch_train_losses) else ''
+                    val_loss = self.epoch_val_losses[i] if i < len(self.epoch_val_losses) else ''
+                    writer.writerow([i+1, train_loss, val_loss])
+            logger.success("Saved losses as losses.csv")
+        except Exception as e:
+            logger.error(f"Error saving losses to CSV: {e}")
         logger.success("Training completed successfully!")
 
 def main():
